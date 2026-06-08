@@ -1,0 +1,30 @@
+# 保护 API Key
+config.py
+
+# Python
+__pycache__/
+*.py[cod]
+venv/
+.env
+*.egg-info/
+
+# 上传的文件
+uploads/
+frames/
+output/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude / AI 助手临时文件
+.claude/
+
+# 测试文件
+test_video.mp4
+test_music.mp3
+
+# 系统文件
+Thumbs.db
+Desktop.ini
+*~

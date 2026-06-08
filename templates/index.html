@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎬 Movie Music Matcher - 电影音乐智能匹配</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <div class="container">
+
+        <!-- 使用教程按钮（中心左侧偏上） -->
+        <button id="tutorialBtn" class="tutorial-btn" title="使用教程">📖<span class="tutorial-label">教程</span></button>
+
+        <!-- 检查更新按钮 -->
+        <button id="updateBtn" class="update-btn" title="检查更新">🔄<span class="update-label">更新</span></button>
+
+        <!-- 教程弹窗 -->
+        <div class="modal-overlay" id="tutorialModal" style="display:none;">
+            <div class="modal-content">
+                <button class="modal-close" id="tutorialClose">&times;</button>
+                <h2>📖 使用教程</h2>
+
+                <div class="tutorial-section">
+                    <h3>🎯 这个工具能做什么？</h3>
+                    <p>上传一段<strong>电影/视频素材</strong>和一首<strong>音乐</strong>，AI 会自动：</p>
+                    <ol>
+                        <li>分析视频的画面风格（类型、情绪、色调、节奏）</li>
+                        <li>分析音乐的音频特征（BPM、能量、调性）</li>
+                        <li>匹配音乐与视频风格并打分</li>
+                        <li>按音乐节拍将视频<strong>自动切分为多段</strong>，生成剪映草稿</li>
+                    </ol>
+                </div>
+
+                <div class="tutorial-section">
+                    <h3>🚀 使用步骤</h3>
+                    <div class="tutorial-step">
+                        <span class="step-num">1</span>
+                        <div>
+                            <strong>上传视频</strong>
+                            <p>点击左侧"电影素材"框，选择你的视频文件（MP4/MOV 等，最大 500MB）</p>
+                        </div>
+                    </div>
+                    <div class="tutorial-step">
+                        <span class="step-num">2</span>
+                        <div>
+                            <strong>上传音乐</strong>
+                            <p>点击右侧"音乐文件"框，选择 1-3 首音乐（MP3/WAV 等）</p>
+                        </div>
+                    </div>
+                    <div class="tutorial-step">
+                        <span class="step-num">3</span>
+                        <div>
+                            <strong>开始分析</strong>
+                            <p>点击"开始分析匹配"按钮，AI 会自动完成所有步骤</p>
+                        </div>
+                    </div>
+                    <div class="tutorial-step">
+                        <span class="step-num">4</span>
+                        <div>
+                            <strong>查看结果 & 打开剪映</strong>
+                            <p>分析完成后会显示匹配评分和剪辑建议。草稿文件自动生成，在剪映中打开即可看到视频已被切分为多段</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="tutorial-section">
+                    <h3>✂️ 视频切分规则</h3>
+                    <p>生成草稿时，视频会根据<strong>音乐 BPM（节拍）</strong>自动切分：</p>
+                    <ul>
+                        <li>每 <strong>2 拍</strong> 切一刀（BPM 120 = 每 1 秒一段）</li>
+                        <li>音乐比视频长 → 视频自动循环使用</li>
+                        <li>段与段之间有微小间隙，模拟手动剪辑效果</li>
+                        <li>在剪映中等效于按 <kbd>Ctrl+B</kbd> 切分视频</li>
+                    </ul>
+                </div>
+
+                <div class="tutorial-section">
+                    <h3>⚙️ 前置要求</h3>
+                    <ul>
+                        <li>✅ <strong>FFmpeg</strong>：程序会自动检测，无需手动配置</li>
+                        <li>✅ <strong>API Key</strong>：已在 config.py 中配置 DeepSeek API</li>
+                        <li>✅ <strong>剪映专业版</strong>：用于打开生成的草稿文件</li>
+                    </ul>
+                </div>
+
+                <div class="tutorial-section">
+                    <h3>💡 小贴士</h3>
+                    <ul>
+                        <li>匹配评分 ≥ 70 分时，草稿会自动添加淡入淡出效果</li>
+                        <li>上传多首音乐会自动排序，选出最佳匹配</li>
+                        <li>草稿保存在 <code>output/</code> 目录下</li>
+                        <li>如果剪映已安装，草稿会自动复制到剪映草稿目录</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <!-- 检查更新弹窗 -->
+        <div class="modal-overlay" id="updateModal" style="display:none;">
+            <div class="modal-content update-modal-content">
+                <button class="modal-close" id="updateClose">&times;</button>
+                <h2>🔄 检查更新</h2>
+
+                <!-- 当前版本信息 -->
+                <div class="update-info-card">
+                    <div class="update-info-row">
+                        <span class="update-info-label">📦 当前应用版本</span>
+                        <span class="update-info-value" id="updateAppVersion">—</span>
+                    </div>
+                    <div class="update-info-row">
+                        <span class="update-info-label">📝 版本说明</span>
+                        <span class="update-info-desc" id="updateAppDesc">—</span>
+                    </div>
+                </div>
+
+                <!-- 编辑器版本信息 -->
+                <div class="update-info-card">
+                    <div class="update-info-row">
+                        <span class="update-info-label">✂️ 已安装编辑器</span>
+                        <span class="update-info-value" id="updateEditorName">—</span>
+                    </div>
+                    <div class="update-info-row">
+                        <span class="update-info-label">🔢 编辑器版本</span>
+                        <span class="update-info-value" id="updateEditorVersion">—</span>
+                    </div>
+                    <div class="update-info-row">
+                        <span class="update-info-label">🔗 兼容状态</span>
+                        <span id="updateCompatStatus">—</span>
+                    </div>
+                </div>
+
+                <!-- 兼容性范围 -->
+                <div class="update-info-card">
+                    <div class="update-info-row">
+                        <span class="update-info-label">🎬 兼容剪映版本</span>
+                        <span class="update-info-value" id="updateJypRange">—</span>
+                    </div>
+                    <div class="update-info-row">
+                        <span class="update-info-label">🌍 兼容 CapCut 版本</span>
+                        <span class="update-info-value" id="updateCapcutRange">—</span>
+                    </div>
+                </div>
+
+                <!-- 更新可用提示 -->
+                <div class="update-available-section" id="updateAvailableSection" style="display:none;">
+                    <div class="update-available-banner">
+                        🎉 有新版本可用！
+                    </div>
+                    <div class="update-info-card">
+                        <div class="update-info-row">
+                            <span class="update-info-label">🆕 最新版本</span>
+                            <span class="update-info-value" id="updateLatestVersion">—</span>
+                        </div>
+                        <div class="update-info-row">
+                            <span class="update-info-label">📝 更新内容</span>
+                            <span class="update-info-desc" id="updateLatestDesc">—</span>
+                        </div>
+                        <div class="update-info-row">
+                            <span class="update-info-label">🎬 兼容剪映</span>
+                            <span class="update-info-value" id="updateLatestJyp">—</span>
+                        </div>
+                        <div class="update-info-row" id="updateMethodRow" style="display:none;">
+                            <span class="update-info-label">⚡ 更新方式</span>
+                            <span class="update-info-value" id="updateMethod">—</span>
+                        </div>
+                    </div>
+
+                    <!-- Git 状态提示 -->
+                    <div class="update-git-info" id="updateGitInfo" style="display:none;">
+                        <div class="update-git-badge" id="updateGitBadge"></div>
+                        <div class="update-git-detail" id="updateGitDetail"></div>
+                    </div>
+
+                    <div class="action-bar">
+                        <button id="startUpdateBtn" class="btn-primary">
+                            🚀 开始更新
+                        </button>
+                    </div>
+                </div>
+
+                <!-- 更新进度 -->
+                <div class="update-progress-section" id="updateProgressSection" style="display:none;">
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="updateProgressBar"></div>
+                    </div>
+                    <p class="progress-text" id="updateProgressText">准备更新...</p>
+                    <p class="progress-percent" id="updateProgressPercent">0%</p>
+                </div>
+
+                <!-- 更新结果消息 -->
+                <div class="update-message" id="updateMessage" style="display:none;"></div>
+            </div>
+        </div>
+
+        <!-- 头部 -->
+        <header>
+            <h1>🎬 电影 × 音乐 智能匹配</h1>
+            <p class="subtitle">上传电影素材和音乐，AI 自动分析风格、匹配音乐、生成剪映草稿</p>
+        </header>
+
+        <!-- 步骤指示器 -->
+        <div class="steps" id="steps">
+            <div class="step active" data-step="1">
+                <span class="step-number">1</span>
+                <span class="step-label">上传文件</span>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step" data-step="2">
+                <span class="step-number">2</span>
+                <span class="step-label">AI 分析</span>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step" data-step="3">
+                <span class="step-number">3</span>
+                <span class="step-label">音乐匹配</span>
+            </div>
+            <div class="step-connector"></div>
+            <div class="step" data-step="4">
+                <span class="step-number">4</span>
+                <span class="step-label">生成草稿</span>
+            </div>
+        </div>
+
+        <!-- 上传区域 -->
+        <section class="upload-section" id="uploadSection">
+            <!-- 视频上传 -->
+            <div class="upload-box" id="videoUploadBox">
+                <div class="upload-icon">🎥</div>
+                <h3>电影素材</h3>
+                <p>拖拽视频文件到此处，或点击选择</p>
+                <p class="upload-hint">支持 MP4, MOV, AVI, MKV, WebM（最大 500MB）</p>
+                <input type="file" id="videoInput" accept=".mp4,.mov,.avi,.mkv,.webm" hidden>
+                <div class="file-info" id="videoFileInfo"></div>
+            </div>
+
+            <!-- 音乐上传 -->
+            <div class="upload-box" id="audioUploadBox">
+                <div class="upload-icon">🎵</div>
+                <h3>音乐文件</h3>
+                <p>拖拽音乐文件到此处，或点击选择（可多选）</p>
+                <p class="upload-hint">支持 MP3, WAV, FLAC, AAC, M4A, OGG</p>
+                <input type="file" id="audioInput" accept=".mp3,.wav,.flac,.aac,.m4a,.ogg" multiple hidden>
+                <div class="file-info" id="audioFileInfo"></div>
+            </div>
+        </section>
+
+        <!-- 开始按钮 -->
+        <div class="action-bar">
+            <button id="startBtn" class="btn-primary" disabled>
+                🚀 开始分析匹配
+            </button>
+        </div>
+
+        <!-- 进度区域 -->
+        <section class="progress-section" id="progressSection" style="display: none;">
+            <div class="progress-bar-container">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            <p class="progress-text" id="progressText">准备中...</p>
+            <p class="progress-percent" id="progressPercent">0%</p>
+        </section>
+
+        <!-- 错误提示 -->
+        <div class="error-box" id="errorBox" style="display: none;"></div>
+
+        <!-- 结果区域 -->
+        <section class="result-section" id="resultSection" style="display: none;">
+            <h2>📊 分析结果</h2>
+
+            <!-- 电影风格分析 -->
+            <div class="result-card" id="styleCard">
+                <h3>🎨 电影风格分析</h3>
+                <div id="styleContent"></div>
+            </div>
+
+            <!-- 音乐匹配结果 -->
+            <div class="result-card" id="matchCard">
+                <h3>🎼 音乐匹配结果</h3>
+                <div id="matchContent"></div>
+            </div>
+
+            <!-- 操作按钮 -->
+            <div class="result-actions">
+                <button class="btn-secondary" onclick="location.reload()">
+                    🔄 重新开始
+                </button>
+            </div>
+        </section>
+    </div>
+
+    <script src="/static/script.js"></script>
+</body>
+</html>
