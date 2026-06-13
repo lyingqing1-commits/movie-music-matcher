@@ -213,15 +213,16 @@ pickExportPathBtn.addEventListener("click", (e) => {
     pickFolder(exportPathInput, exportPathSuggestions);
 });
 
-// 折叠/展开导出路径设置
+// 折叠/展开导出路径设置（默认展开）
+let exportPathExpanded = true;
 exportPathToggle.addEventListener("click", () => {
-    const isOpen = exportPathBody.style.display !== "none";
-    if (isOpen) {
-        exportPathBody.style.display = "none";
-        exportPathArrow.textContent = "▶";
-    } else {
+    exportPathExpanded = !exportPathExpanded;
+    if (exportPathExpanded) {
         exportPathBody.style.display = "block";
         exportPathArrow.textContent = "▼";
+    } else {
+        exportPathBody.style.display = "none";
+        exportPathArrow.textContent = "▶";
     }
 });
 
