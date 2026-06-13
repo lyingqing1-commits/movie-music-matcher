@@ -10,6 +10,7 @@ Movie Music Matcher - 主应用入口
 import os
 import sys
 import uuid
+import re
 import json
 import threading
 import time
@@ -26,6 +27,98 @@ from flask import (
     Flask, render_template, request, jsonify,
     send_from_directory,
 )
+
+
+# ============================================
+# 轻量 Markdown → HTML 转换
+# ============================================
+
+def _md_to_html(md_text: str) -> str:
+    """将 Markdown 文本转换为 HTML（支持标题、列表、粗体、代码、表格）"""
+    lines = md_text.split("\n")
+    html = []
+    in_list = None  # "ul" or "ol"
+
+    def close_list():
+        nonlocal in_list
+        if in_list:
+            html.append(f"</{in_list}>")
+            in_list = None
+
+    def _inline(text: str) -> str:
+        """处理行内样式：粗体、代码、链接"""
+        text = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", text)
+        text = re.sub(r"`([^`]+)`", r"<code>\1</code>", text)
+        text = re.sub(r"\[([^\]]+)\]\(([^)]+)\)",
+                      r'<a href="\2" target="_blank">\1</a>', text)
+        return text
+
+    for line in lines:
+        stripped = line.strip()
+
+        # 空行 → 关闭列表
+        if not stripped:
+            close_list()
+            continue
+
+        # 标题
+        if stripped.startswith("### "):
+            close_list()
+            html.append(f"<h3>{_inline(stripped[4:])}</h3>")
+            continue
+        if stripped.startswith("## "):
+            close_list()
+            html.append(f"<h2>{_inline(stripped[3:])}</h2>")
+            continue
+        if stripped.startswith("# "):
+            close_list()
+            html.append(f"<h1>{_inline(stripped[2:])}</h1>")
+            continue
+
+        # 无序列表
+        if re.match(r"^[-*]\s+", stripped):
+            if in_list != "ul":
+                close_list()
+                html.append("<ul>")
+                in_list = "ul"
+            content = re.sub(r"^[-*]\s+", "", stripped)
+            html.append(f"<li>{_inline(content)}</li>")
+            continue
+
+        # 有序列表
+        if re.match(r"^\d+\.\s+", stripped):
+            if in_list != "ol":
+                close_list()
+                html.append("<ol>")
+                in_list = "ol"
+            content = re.sub(r"^\d+\.\s+", "", stripped)
+            html.append(f"<li>{_inline(content)}</li>")
+            continue
+
+        # 分隔线
+        if stripped in ("---", "***", "___"):
+            close_list()
+            html.append("<hr>")
+            continue
+
+        # 表格
+        if stripped.startswith("|") and stripped.endswith("|"):
+            close_list()
+            cells = [c.strip() for c in stripped.split("|")[1:-1]]
+            if all(re.match(r"^[-:]+$", c) for c in cells):
+                continue  # 跳过分隔行
+            html.append("<table><tr>")
+            for c in cells:
+                html.append(f"<td>{_inline(c)}</td>")
+            html.append("</tr></table>")
+            continue
+
+        # 普通段落
+        close_list()
+        html.append(f"<p>{_inline(stripped)}</p>")
+
+    close_list()
+    return "\n".join(html)
 import config
 from modules.frame_extractor import extract_frames, sample_frames
 from modules.style_analyzer import analyze_style
@@ -40,14 +133,34 @@ from modules.updater import (
     perform_update,
     get_update_status,
 )
+from modules.movie_identifier import identify_movie
+from modules.scene_detector import detect_scenes
+from modules.segment_scorer import score_segments
+from modules.music_structure_analyzer import analyze_music_structure
+from modules.smart_editor import assemble_smart_draft
+
+# v3.0 新增模块
+from modules.workspace_manager import (
+    create_run_folder, save_artifact, load_artifact, generate_project_slug, run_exists
+)
+from modules.project_brief import create_brief, validate_brief, load_brief, brief_to_display
+from modules.media_scanner import scan_media, build_scan_preview
+from modules.material_review import review_material, taxonomy_to_display
+from modules.story_developer import develop_story, story_to_display
+from modules.blueprint_generator import generate_blueprint, blueprint_to_display
+from modules.blueprint_validator import validate_blueprint as validate_bp, suggest_fixes
+from modules.delivery_auditor import audit_delivery, generate_pickup_report, pickup_to_display
 
 app = Flask(__name__)
+# Flask MAX_CONTENT_LENGTH: 使用视频大小的上限（2GB）
+# Flask 默认不支持 >2GB 的单文件，如需更大文件请用分块上传
 app.config["MAX_CONTENT_LENGTH"] = max(
     config.MAX_VIDEO_SIZE_MB, config.MAX_AUDIO_SIZE_MB
 ) * 1024 * 1024  # Flask 用字节
 
 # 确保必要的文件夹存在
-for folder in [config.UPLOAD_FOLDER, config.FRAME_FOLDER, config.OUTPUT_FOLDER]:
+for folder in [config.UPLOAD_FOLDER, config.FRAME_FOLDER, config.OUTPUT_FOLDER,
+                 getattr(config, "WORKSPACE_DIR", os.path.join(config.BASE_DIR, "workspace"))]:
     os.makedirs(folder, exist_ok=True)
 
 # 任务状态存储（简单内存字典，生产环境应使用数据库）
@@ -62,27 +175,53 @@ def allowed_file(filename: str, allowed_extensions: set) -> bool:
 
 def process_task(task_id: str, video_path: str, audio_paths: list[str]):
     """
-    后台处理任务：完整的分析 + 匹配 + 生成流程
+    后台处理任务：完整的分析 + 匹配 + 智能剪辑 + 生成流程
+
+    v2.0 新增智能编辑管线：
+    1. 电影识别（一致性锚定）
+    2. 增强风格分析（带入电影知识）
+    3. 音乐结构分析（段落识别）
+    4. 场景检测 + 片段评分
+    5. 智能匹配引擎
+    6. 生成草稿
     """
+    editing_mode = tasks[task_id].get("editing_mode", config.DEFAULT_EDITING_MODE)
+    smart_enabled = getattr(config, "SMART_EDITING_ENABLED", True)
+
     try:
         # ---- 步骤 1：提取视频帧 ----
         tasks[task_id]["status"] = "extracting"
-        tasks[task_id]["progress"] = 10
+        tasks[task_id]["progress"] = 5
         tasks[task_id]["message"] = "正在提取视频帧..."
 
         frame_files, video_info = extract_frames(video_path, task_id)
         tasks[task_id]["video_info"] = video_info
         tasks[task_id]["frame_count"] = len(frame_files)
-        tasks[task_id]["progress"] = 25
+        tasks[task_id]["progress"] = 15
+        sampled = sample_frames(frame_files)
 
-        # ---- 步骤 2：AI 分析电影风格 ----
+        # ---- 步骤 2a：电影识别（新功能，提升一致性） ----
+        movie_identity = None
+        if smart_enabled:
+            try:
+                tasks[task_id]["status"] = "identifying_movie"
+                tasks[task_id]["message"] = "🔍 AI 正在识别电影内容..."
+                tasks[task_id]["progress"] = 18
+
+                movie_identity = identify_movie(sampled)
+                tasks[task_id]["movie_identity"] = movie_identity
+            except Exception as e:
+                print(f"[WARN] 电影识别失败（不影响后续流程）: {e}")
+                movie_identity = None
+
+        # ---- 步骤 2b：AI 分析电影风格（增强：结合电影知识） ----
         tasks[task_id]["status"] = "analyzing_style"
         tasks[task_id]["message"] = "AI 正在分析电影画面风格..."
+        tasks[task_id]["progress"] = 22
 
-        sampled = sample_frames(frame_files)
-        style_result = analyze_style(sampled)
+        style_result = analyze_style(sampled, movie_identity)
         tasks[task_id]["style_analysis"] = style_result
-        tasks[task_id]["progress"] = 50
+        tasks[task_id]["progress"] = 35
 
         # ---- 步骤 3：分析所有音乐 ----
         tasks[task_id]["status"] = "analyzing_audio"
@@ -92,31 +231,109 @@ def process_task(task_id: str, video_path: str, audio_paths: list[str]):
         for i, audio_path in enumerate(audio_paths):
             feat = audio_analyze(audio_path)
             audio_features_list.append(feat)
-            tasks[task_id]["progress"] = 50 + int(15 * (i + 1) / len(audio_paths))
+            tasks[task_id]["progress"] = 35 + int(10 * (i + 1) / len(audio_paths))
 
         tasks[task_id]["audio_features"] = audio_features_list
+        tasks[task_id]["progress"] = 45
+
+        # ---- 步骤 3b：音乐结构分析（新功能） ----
+        music_structure = None
+        best_audio_path = audio_paths[0] if audio_paths else ""
+        best_audio_features = audio_features_list[0] if audio_features_list else {}
+
+        if smart_enabled and best_audio_path:
+            try:
+                tasks[task_id]["status"] = "analyzing_music_structure"
+                tasks[task_id]["message"] = "🎵 AI 正在分析音乐结构..."
+                tasks[task_id]["progress"] = 48
+
+                music_structure = analyze_music_structure(
+                    best_audio_path,
+                    best_audio_features,
+                    style_result,
+                )
+                tasks[task_id]["music_structure"] = music_structure
+            except Exception as e:
+                print(f"[WARN] 音乐结构分析失败（不影响后续流程）: {e}")
+                music_structure = None
 
         # ---- 步骤 4：AI 匹配音乐与电影风格 ----
         tasks[task_id]["status"] = "matching"
         tasks[task_id]["message"] = "AI 正在匹配音乐与电影风格..."
-        tasks[task_id]["progress"] = 70
+        tasks[task_id]["progress"] = 55
 
         match_results = match_music_to_style(style_result, audio_features_list)
         tasks[task_id]["match_results"] = match_results
-        tasks[task_id]["progress"] = 85
+        tasks[task_id]["progress"] = 65
 
-        # ---- 步骤 5：生成剪映草稿 ----
+        # ---- 步骤 5：智能编辑管线（新功能） ----
+        smart_segments = None
+        if smart_enabled and match_results:
+            best_match = match_results[0]
+            try:
+                # 5a: 场景检测
+                tasks[task_id]["status"] = "detecting_scenes"
+                tasks[task_id]["message"] = "🎬 正在检测视频场景..."
+                tasks[task_id]["progress"] = 68
+
+                video_dur = video_info.get("duration", 60)
+                scenes = detect_scenes(video_path, video_duration=video_dur)
+                tasks[task_id]["scene_count"] = len(scenes)
+
+                # 5b: AI 片段评分
+                tasks[task_id]["status"] = "scoring_segments"
+                tasks[task_id]["message"] = f"🤖 AI 正在评估 {len(scenes)} 个片段的高光度..."
+                tasks[task_id]["progress"] = 72
+
+                scored = score_segments(
+                    video_path, scenes, movie_identity, task_id, editing_mode
+                )
+                tasks[task_id]["scored_segments"] = scored
+
+                # 5c: 智能匹配
+                tasks[task_id]["status"] = "smart_matching"
+                mode_label = "视频优先" if editing_mode == "video_first" else "音乐优先"
+                tasks[task_id]["message"] = f"✂️ 智能匹配中（{mode_label}模式）..."
+                tasks[task_id]["progress"] = 78
+
+                smart_segments = assemble_smart_draft(
+                    scored_segments=scored,
+                    music_structure=music_structure or _fallback_structure(
+                        best_match.get("duration_seconds", 60),
+                        best_match.get("tempo_bpm", 120),
+                    ),
+                    video_info=video_info,
+                    editing_mode=editing_mode,
+                )
+                tasks[task_id]["smart_segments_info"] = {
+                    "mode": editing_mode,
+                    "segment_count": len(smart_segments),
+                    "scene_count": len(scenes),
+                }
+
+                tasks[task_id]["progress"] = 85
+
+            except Exception as e:
+                print(f"[WARN] 智能编辑失败，回退到节拍等分模式: {e}")
+                smart_segments = None
+
+        # ---- 步骤 6：生成剪映草稿 ----
         tasks[task_id]["status"] = "generating"
         tasks[task_id]["message"] = "正在生成剪映草稿..."
+        tasks[task_id]["progress"] = 90
 
         if match_results:
             best_match = match_results[0]
+            custom_output = tasks[task_id].get("custom_export_path")
             draft_info = create_draft(
                 video_path=video_path,
                 audio_path=best_match["file_path"],
                 video_info=video_info,
                 match_result=best_match,
                 task_id=task_id,
+                smart_segments=smart_segments,
+                editing_mode=editing_mode if smart_segments else None,
+                custom_output_dir=custom_output,
             )
             tasks[task_id]["draft_info"] = draft_info
 
@@ -132,9 +349,26 @@ def process_task(task_id: str, video_path: str, audio_paths: list[str]):
         print(f"[ERROR] Task {task_id} failed:\n{tasks[task_id]['error_detail']}")
 
 
+def _fallback_structure(duration: float, bpm: float) -> dict:
+    """在音乐结构分析失败时构建最小结构"""
+    return {
+        "duration": duration,
+        "bpm": bpm,
+        "structure": [
+            {"section": "intro", "start_time": 0, "end_time": duration * 0.15, "energy_level": 0.3},
+            {"section": "verse", "start_time": duration * 0.15, "end_time": duration * 0.4, "energy_level": 0.5},
+            {"section": "chorus", "start_time": duration * 0.4, "end_time": duration * 0.65, "energy_level": 0.8},
+            {"section": "bridge", "start_time": duration * 0.65, "end_time": duration * 0.8, "energy_level": 0.45},
+            {"section": "outro", "start_time": duration * 0.8, "end_time": duration, "energy_level": 0.25},
+        ],
+        "key_moments": [{"time": duration * 0.4, "label": "副歌", "energy": 0.8}],
+        "overall_structure": "intro → verse → chorus → bridge → outro",
+    }
+
+
 def process_task_video_only(task_id: str, video_path: str):
     """
-    Phase 1：仅处理视频（抽帧 + 分析风格），不处理音频
+    Phase 1：仅处理视频（抽帧 + 电影识别 + 分析风格），不处理音频
     完成后等待用户选择音乐来源
     """
     try:
@@ -146,14 +380,25 @@ def process_task_video_only(task_id: str, video_path: str):
         frame_files, video_info = extract_frames(video_path, task_id)
         tasks[task_id]["video_info"] = video_info
         tasks[task_id]["frame_count"] = len(frame_files)
-        tasks[task_id]["progress"] = 40
+        tasks[task_id]["progress"] = 30
+        sampled = sample_frames(frame_files)
 
-        # ---- 步骤 2：AI 分析电影风格 ----
+        # ---- 步骤 2a：电影识别（新） ----
+        movie_identity = None
+        if getattr(config, "SMART_EDITING_ENABLED", True):
+            try:
+                tasks[task_id]["message"] = "🔍 AI 正在识别电影内容..."
+                movie_identity = identify_movie(sampled)
+                tasks[task_id]["movie_identity"] = movie_identity
+            except Exception as e:
+                print(f"[WARN] 电影识别失败: {e}")
+
+        # ---- 步骤 2b：AI 分析电影风格 ----
         tasks[task_id]["status"] = "analyzing_style"
         tasks[task_id]["message"] = "AI 正在分析电影画面风格..."
+        tasks[task_id]["progress"] = 40
 
-        sampled = sample_frames(frame_files)
-        style_result = analyze_style(sampled)
+        style_result = analyze_style(sampled, movie_identity)
         tasks[task_id]["style_analysis"] = style_result
         tasks[task_id]["progress"] = 100
 
@@ -171,7 +416,7 @@ def process_task_video_only(task_id: str, video_path: str):
 
 def process_task_with_ai_track(task_id: str, video_path: str, ai_track: dict):
     """
-    Phase 3：用户选择了 AI 生成的音轨后，分析音频 + 匹配 + 生成草稿
+    Phase 3：用户选择了 AI 生成的音轨后，分析音频 + 匹配 + 智能剪辑 + 生成草稿
     """
     try:
         audio_path = ai_track.get("path")
@@ -180,11 +425,14 @@ def process_task_with_ai_track(task_id: str, video_path: str, ai_track: dict):
 
         video_info = tasks[task_id].get("video_info", {})
         style_result = tasks[task_id].get("style_analysis", {})
+        movie_identity = tasks[task_id].get("movie_identity")
+        editing_mode = tasks[task_id].get("editing_mode", config.DEFAULT_EDITING_MODE)
+        smart_enabled = getattr(config, "SMART_EDITING_ENABLED", True)
 
         # ---- 步骤 1：分析 AI 生成的音频 ----
         tasks[task_id]["status"] = "analyzing_audio"
         tasks[task_id]["message"] = "正在分析 AI 生成的音乐..."
-        tasks[task_id]["progress"] = 55
+        tasks[task_id]["progress"] = 50
 
         audio_feat = audio_analyze(audio_path)
         audio_feat["file_path"] = audio_path
@@ -192,27 +440,86 @@ def process_task_with_ai_track(task_id: str, video_path: str, ai_track: dict):
         audio_features_list = [audio_feat]
         tasks[task_id]["audio_features"] = audio_features_list
 
+        # ---- 步骤 1b：音乐结构分析 ----
+        music_structure = None
+        if smart_enabled:
+            try:
+                tasks[task_id]["message"] = "🎵 AI 正在分析音乐结构..."
+                tasks[task_id]["progress"] = 55
+                music_structure = analyze_music_structure(
+                    audio_path, audio_feat, style_result
+                )
+                tasks[task_id]["music_structure"] = music_structure
+            except Exception as e:
+                print(f"[WARN] 音乐结构分析失败: {e}")
+
         # ---- 步骤 2：AI 匹配 ----
         tasks[task_id]["status"] = "matching"
         tasks[task_id]["message"] = "AI 正在匹配音乐与电影风格..."
-        tasks[task_id]["progress"] = 75
+        tasks[task_id]["progress"] = 65
 
         match_results = match_music_to_style(style_result, audio_features_list)
         tasks[task_id]["match_results"] = match_results
-        tasks[task_id]["progress"] = 90
+        tasks[task_id]["progress"] = 75
 
-        # ---- 步骤 3：生成剪映草稿 ----
+        # ---- 步骤 3：智能编辑管线 ----
+        smart_segments = None
+        if smart_enabled and match_results:
+            try:
+                tasks[task_id]["status"] = "detecting_scenes"
+                tasks[task_id]["message"] = "🎬 正在检测视频场景..."
+                tasks[task_id]["progress"] = 78
+
+                video_dur = video_info.get("duration", 60)
+                scenes = detect_scenes(video_path, video_duration=video_dur)
+                tasks[task_id]["scene_count"] = len(scenes)
+
+                tasks[task_id]["status"] = "scoring_segments"
+                tasks[task_id]["message"] = f"🤖 AI 正在评估 {len(scenes)} 个片段..."
+                tasks[task_id]["progress"] = 82
+
+                scored = score_segments(
+                    video_path, scenes, movie_identity, task_id, editing_mode
+                )
+
+                tasks[task_id]["status"] = "smart_matching"
+                tasks[task_id]["message"] = f"✂️ 智能匹配中（{editing_mode}模式）..."
+                tasks[task_id]["progress"] = 88
+
+                smart_segments = assemble_smart_draft(
+                    scored_segments=scored,
+                    music_structure=music_structure or _fallback_structure(
+                        audio_feat.get("duration_seconds", 60),
+                        audio_feat.get("tempo_bpm", 120),
+                    ),
+                    video_info=video_info,
+                    editing_mode=editing_mode,
+                )
+                tasks[task_id]["smart_segments_info"] = {
+                    "mode": editing_mode,
+                    "segment_count": len(smart_segments),
+                    "scene_count": len(scenes),
+                }
+            except Exception as e:
+                print(f"[WARN] 智能编辑失败，回退: {e}")
+
+        # ---- 步骤 4：生成剪映草稿 ----
         tasks[task_id]["status"] = "generating"
         tasks[task_id]["message"] = "正在生成剪映草稿..."
+        tasks[task_id]["progress"] = 92
 
         if match_results:
             best_match = match_results[0]
+            custom_output = tasks[task_id].get("custom_export_path")
             draft_info = create_draft(
                 video_path=video_path,
                 audio_path=audio_path,
                 video_info=video_info,
                 match_result=best_match,
                 task_id=task_id,
+                smart_segments=smart_segments,
+                editing_mode=editing_mode if smart_segments else None,
+                custom_output_dir=custom_output,
             )
             tasks[task_id]["draft_info"] = draft_info
 
@@ -268,6 +575,8 @@ def upload():
 
     # ---- AI 模式：只上传视频，稍后 AI 生成音乐 ----
     if mode == "ai":
+        editing_mode = request.form.get("editing_mode", config.DEFAULT_EDITING_MODE)
+        custom_export_path = request.form.get("custom_export_path", "").strip()
         tasks[task_id] = {
             "id": task_id,
             "mode": "ai",
@@ -276,6 +585,8 @@ def upload():
             "message": "视频已上传，正在分析影片风格...",
             "video_path": video_path,
             "video_filename": video_filename,
+            "editing_mode": editing_mode,
+            "custom_export_path": custom_export_path if custom_export_path else None,
         }
 
         thread = threading.Thread(
@@ -310,6 +621,10 @@ def upload():
     if not audio_paths:
         return jsonify({"error": "没有有效的音乐文件"}), 400
 
+    # 获取剪辑模式和自定义导出路径
+    editing_mode = request.form.get("editing_mode", config.DEFAULT_EDITING_MODE)
+    custom_export_path = request.form.get("custom_export_path", "").strip()
+
     # 初始化任务
     tasks[task_id] = {
         "id": task_id,
@@ -321,6 +636,8 @@ def upload():
         "audio_paths": audio_paths,
         "video_filename": video_filename,
         "audio_filenames": [os.path.basename(p) for p in audio_paths],
+        "editing_mode": editing_mode,
+        "custom_export_path": custom_export_path if custom_export_path else None,
     }
 
     # 启动后台处理
@@ -362,6 +679,12 @@ def task_status(task_id: str):
         "draft_info": task.get("draft_info") if include_match else None,
         "video_info": task.get("video_info") if include_match else None,
         "ai_tracks": task.get("ai_tracks") if status == "ai_music_ready" else None,
+        "editing_mode": task.get("editing_mode", ""),
+        "movie_identity": task.get("movie_identity") if include_style else None,
+        "music_structure": task.get("music_structure") if include_match else None,
+        "smart_segments_info": task.get("smart_segments_info") if include_match else None,
+        "scene_count": task.get("scene_count", 0) if include_match else 0,
+        "export_path": task.get("custom_export_path") or config.OUTPUT_FOLDER,
     })
 
 
@@ -512,6 +835,40 @@ def api_update_status():
     return jsonify(get_update_status())
 
 
+@app.route("/api/tutorial")
+def api_tutorial():
+    """
+    返回使用教程的 HTML 内容。
+    从桌面文件读取，管理员可直接编辑该文件。
+    """
+    tutorial_path = os.path.expanduser(r"~\Desktop\MovieMusicMatcher_教程.md")
+
+    try:
+        if not os.path.exists(tutorial_path):
+            return jsonify({"html": "<p style='color:var(--text-secondary)'>教程文件不存在，请在桌面创建 MovieMusicMatcher_教程.md</p>"})
+
+        with open(tutorial_path, "r", encoding="utf-8") as f:
+            md_text = f.read()
+
+        if not md_text.strip():
+            return jsonify({"html": "<p style='color:var(--text-secondary)'>教程内容为空，请编辑桌面上的 MovieMusicMatcher_教程.md</p>"})
+
+        html_content = _md_to_html(md_text)
+        return jsonify({"html": html_content})
+
+    except Exception as e:
+        return jsonify({"html": f"<p style='color:var(--error)'>读取教程失败: {e}</p>"})
+
+
+@app.route("/api/default-export-path")
+def api_default_export_path():
+    """返回默认导出路径，供前端初始化"""
+    return jsonify({
+        "default_path": config.OUTPUT_FOLDER,
+        "capcut_draft_dir": config.CAPCUT_DRAFT_DIR,
+    })
+
+
 @app.route("/health")
 def health():
     """健康检查"""
@@ -523,21 +880,679 @@ def health():
 
 
 # ============================================
+# v3.0 管道阶段处理函数
+# ============================================
+
+def _get_task_safe(task_id: str) -> dict:
+    """安全获取任务，不存在时返回 None"""
+    return tasks.get(task_id)
+
+
+def _abort_if_error(task_id: str) -> bool:
+    """检查任务是否处于错误状态，是则返回 True"""
+    task = _get_task_safe(task_id)
+    if task and task.get("status") == "error":
+        return True
+    return False
+
+
+def run_media_scan(task_id: str):
+    """v3 阶段 2：媒体扫描"""
+    task = _get_task_safe(task_id)
+    if not task:
+        return
+
+    try:
+        task["status"] = "scanning"
+        task["phase"] = "media_scan"
+        task["progress"] = 10
+        task["message"] = "正在扫描媒体文件..."
+
+        video_path = task.get("video_path", "")
+        audio_paths = task.get("audio_paths", [])
+        run_path = task.get("run_path", "")
+
+        manifest = scan_media(video_path, audio_paths, run_path)
+        task["manifest"] = manifest
+        task["scan_preview"] = build_scan_preview(manifest)
+
+        task["progress"] = 25
+        task["status"] = "scan_complete"
+        task["message"] = "✅ 媒体扫描完成，请确认素材审查"
+
+    except Exception as e:
+        task["status"] = "error"
+        task["message"] = f"❌ 媒体扫描失败: {str(e)}"
+        import traceback
+        task["error_detail"] = traceback.format_exc()
+        print(f"[ERROR] Media scan failed for {task_id}:\n{task['error_detail']}")
+
+
+def run_material_review(task_id: str):
+    """v3 阶段 3：素材审查"""
+    task = _get_task_safe(task_id)
+    if not task:
+        return
+
+    try:
+        task["status"] = "reviewing"
+        task["phase"] = "material_review"
+        task["progress"] = 30
+        task["message"] = "🤖 AI 正在审查素材..."
+
+        video_path = task.get("video_path", "")
+        run_path = task.get("run_path", "")
+        frame_files = task.get("frame_files", [])
+
+        # 确保帧已提取
+        if not frame_files and video_path:
+            from modules.frame_extractor import extract_frames, sample_frames
+            frame_files, video_info = extract_frames(video_path, task_id)
+            task["frame_files"] = frame_files
+            task["video_info"] = video_info
+
+        # 提取视频信息
+        video_info = task.get("video_info", {})
+        if not video_info and video_path:
+            from modules.frame_extractor import get_video_info
+            video_info = get_video_info(video_path)
+            task["video_info"] = video_info
+
+        editing_mode = task.get("editing_mode", "video_first")
+
+        # 执行素材审查
+        review = review_material(
+            frame_files=frame_files or [],
+            video_info=video_info,
+            run_path=run_path,
+            editing_mode=editing_mode,
+        )
+        task["review"] = review
+        task["review_display"] = taxonomy_to_display(review)
+
+        task["progress"] = 45
+        task["status"] = "review_complete"
+        task["message"] = "✅ 素材审查完成，请确认后继续"
+
+    except Exception as e:
+        task["status"] = "error"
+        task["message"] = f"❌ 素材审查失败: {str(e)}"
+        import traceback
+        task["error_detail"] = traceback.format_exc()
+        print(f"[ERROR] Material review failed for {task_id}:\n{task['error_detail']}")
+
+
+def run_story(task_id: str):
+    """v3 阶段 4：故事开发"""
+    task = _get_task_safe(task_id)
+    if not task:
+        return
+
+    try:
+        task["status"] = "developing_story"
+        task["phase"] = "story"
+        task["progress"] = 50
+        task["message"] = "📝 AI 正在开发叙事结构..."
+
+        review = task.get("review", {})
+        brief = task.get("brief", {})
+        run_path = task.get("run_path", "")
+
+        script = develop_story(review, brief, run_path)
+        task["story"] = script
+        task["story_display"] = story_to_display(script)
+
+        task["progress"] = 60
+        task["status"] = "story_complete"
+        task["message"] = "✅ 故事开发完成，请确认后继续（可跳过）"
+
+    except Exception as e:
+        task["status"] = "error"
+        task["message"] = f"❌ 故事开发失败: {str(e)}"
+        import traceback
+        task["error_detail"] = traceback.format_exc()
+        print(f"[ERROR] Story development failed for {task_id}:\n{task['error_detail']}")
+
+
+def run_blueprint(task_id: str):
+    """v3 阶段 5：剪辑蓝图生成"""
+    task = _get_task_safe(task_id)
+    if not task:
+        return
+
+    try:
+        task["status"] = "generating_blueprint"
+        task["phase"] = "blueprint"
+        task["progress"] = 65
+        task["message"] = "✂️ 正在生成剪辑蓝图..."
+
+        video_path = task.get("video_path", "")
+        audio_paths = task.get("audio_paths", [])
+        audio_path = audio_paths[0] if audio_paths else ""
+        run_path = task.get("run_path", "")
+        review = task.get("review", {})
+        brief = task.get("brief", {})
+        video_info = task.get("video_info", {})
+        editing_mode = task.get("editing_mode", "video_first")
+        music_structure = task.get("music_structure")
+
+        # 音频分析（如果没有预先分析）
+        audio_features = None
+        if audio_path and os.path.exists(audio_path):
+            try:
+                from modules.music_matcher import analyze_audio
+                audio_features = analyze_audio(audio_path)
+                task["audio_features"] = [audio_features]
+            except Exception as e:
+                print(f"   [WARN] 音频分析失败: {e}")
+
+        blueprint = generate_blueprint(
+            video_path=video_path,
+            audio_path=audio_path,
+            video_info=video_info,
+            material_review=review,
+            project_brief=brief,
+            run_path=run_path,
+            task_id=task_id,
+            editing_mode=editing_mode,
+            music_structure=music_structure,
+            audio_features=audio_features,
+        )
+        task["blueprint"] = blueprint
+        task["blueprint_display"] = blueprint_to_display(blueprint)
+
+        task["progress"] = 80
+        task["status"] = "blueprint_complete"
+        task["message"] = "✅ 剪辑蓝图已生成，请审查后确认"
+
+    except Exception as e:
+        task["status"] = "error"
+        task["message"] = f"❌ 蓝图生成失败: {str(e)}"
+        import traceback
+        task["error_detail"] = traceback.format_exc()
+        print(f"[ERROR] Blueprint generation failed for {task_id}:\n{task['error_detail']}")
+
+
+def run_validate(task_id: str):
+    """v3 阶段 6：蓝图验证"""
+    task = _get_task_safe(task_id)
+    if not task:
+        return
+
+    try:
+        task["status"] = "validating"
+        task["phase"] = "validate"
+        task["progress"] = 82
+        task["message"] = "🔍 正在验证剪辑蓝图..."
+
+        blueprint = task.get("blueprint", {})
+        run_path = task.get("run_path", "")
+
+        validation = validate_bp(blueprint)
+        task["validation"] = validation
+
+        if run_path:
+            save_artifact(run_path, "blueprint-audit", validation)
+
+        # 如果有错误，尝试自动修复
+        if not validation.get("passed", False):
+            try:
+                fixed_bp = suggest_fixes(validation, blueprint)
+                if fixed_bp:
+                    task["blueprint"] = fixed_bp
+                    task["blueprint_display"] = blueprint_to_display(fixed_bp)
+                    # 重新验证
+                    validation2 = validate_bp(fixed_bp)
+                    task["validation"] = validation2
+                    if run_path:
+                        save_artifact(run_path, "blueprint-audit", validation2)
+                    if validation2.get("passed", False):
+                        task["message"] = "✅ 蓝图已自动修复并通过验证"
+            except Exception as e:
+                print(f"   [WARN] 自动修复失败: {e}")
+
+        task["progress"] = 85
+        task["status"] = "validation_complete"
+        if not task.get("message"):
+            task["message"] = "🔍 蓝图验证完成，请确认后开始构建"
+
+    except Exception as e:
+        task["status"] = "error"
+        task["message"] = f"❌ 蓝图验证失败: {str(e)}"
+        import traceback
+        task["error_detail"] = traceback.format_exc()
+        print(f"[ERROR] Blueprint validation failed for {task_id}:\n{task['error_detail']}")
+
+
+def run_build(task_id: str):
+    """v3 阶段 7：构建草稿 + 审计"""
+    task = _get_task_safe(task_id)
+    if not task:
+        return
+
+    try:
+        task["status"] = "building"
+        task["phase"] = "build"
+        task["progress"] = 88
+        task["message"] = "📦 正在生成剪映草稿..."
+
+        video_path = task.get("video_path", "")
+        audio_paths = task.get("audio_paths", [])
+        audio_path = audio_paths[0] if audio_paths else ""
+        video_info = task.get("video_info", {})
+        blueprint = task.get("blueprint", {})
+        review = task.get("review", {})
+        story = task.get("story", {})
+        run_path = task.get("run_path", "")
+        editing_mode = task.get("editing_mode", "video_first")
+        custom_output = task.get("custom_export_path")
+
+        # 从 blueprint 中提取 smart_segments（兼容 create_draft 接口）
+        smart_segments = []
+        for clip in blueprint.get("clips", []):
+            if clip.get("media_type") == "video":
+                smart_segments.append({
+                    "source_start": clip.get("source_in_seconds", 0),
+                    "source_duration": clip.get("source_out_seconds", 0) - clip.get("source_in_seconds", 0),
+                    "target_start": clip.get("timeline_in_seconds", 0),
+                    "match_rationale": clip.get("purpose", ""),
+                    "segment_score": clip.get("highlight_score", 0),
+                    "emotional_tone": clip.get("emotional_tone", ""),
+                })
+
+        # 构建匹配结果兼容格式
+        audio_features = task.get("audio_features", [{}])
+        match_result = audio_features[0] if audio_features else {}
+        match_result["file_path"] = audio_path
+
+        # 生成草稿
+        from modules.draft_generator import create_draft as gen_draft
+        draft_info = gen_draft(
+            video_path=video_path,
+            audio_path=audio_path,
+            video_info=video_info,
+            match_result=match_result,
+            task_id=task_id,
+            smart_segments=smart_segments if smart_segments else None,
+            editing_mode=editing_mode if smart_segments else None,
+            custom_output_dir=custom_output if custom_output else None,
+        )
+        task["draft_info"] = draft_info
+
+        task["progress"] = 95
+        task["message"] = "📊 正在审计交付..."
+
+        # 交付审计
+        audit_report = audit_delivery(
+            blueprint=blueprint,
+            draft_info=draft_info,
+            material_review=review,
+            story_script=story,
+            run_path=run_path,
+        )
+        task["audit"] = audit_report
+
+        # 补拍报告
+        pickup_report = generate_pickup_report(
+            blueprint=blueprint,
+            material_review=review,
+            story_script=story,
+            run_path=run_path,
+        )
+        task["pickup"] = pickup_report
+        task["pickup_display"] = pickup_to_display(pickup_report)
+
+        task["status"] = "completed"
+        task["progress"] = 100
+        task["message"] = "✅ 全部完成！草稿已生成，请在剪映中查看。"
+
+    except Exception as e:
+        task["status"] = "error"
+        task["message"] = f"❌ 构建失败: {str(e)}"
+        import traceback
+        task["error_detail"] = traceback.format_exc()
+        print(f"[ERROR] Build failed for {task_id}:\n{task['error_detail']}")
+
+
+# v3 阶段分发器
+PHASE_HANDLERS = {
+    "media_scan": run_media_scan,
+    "material_review": run_material_review,
+    "story": run_story,
+    "blueprint": run_blueprint,
+    "validate": run_validate,
+    "build": run_build,
+}
+
+PHASE_FLOW = [
+    "media_scan",
+    "material_review",
+    "story",
+    "blueprint",
+    "validate",
+    "build",
+]
+
+
+def _get_next_phase(current_phase: str) -> str | None:
+    """获取下一阶段名称"""
+    try:
+        idx = PHASE_FLOW.index(current_phase)
+        if idx + 1 < len(PHASE_FLOW):
+            return PHASE_FLOW[idx + 1]
+    except ValueError:
+        pass
+    return None
+
+
+def _launch_phase(task_id: str, phase_name: str):
+    """在后台线程中启动管道阶段"""
+    handler = PHASE_HANDLERS.get(phase_name)
+    if handler:
+        thread = threading.Thread(target=handler, args=(task_id,), daemon=True)
+        thread.start()
+        return True
+    return False
+
+
+# ============================================
+# v3.0 API 路由
+# ============================================
+
+@app.route("/api/brief/create", methods=["POST"])
+def api_create_brief():
+    """v3 Phase 1：创建项目简报"""
+    try:
+        form_data = request.get_json() if request.is_json else request.form.to_dict()
+        brief = create_brief(form_data)
+
+        # 创建任务 ID
+        task_id = brief.get("project_slug", str(uuid.uuid4())[:12])
+
+        tasks[task_id] = {
+            "id": task_id,
+            "mode": "v3",
+            "phase": "brief",
+            "status": "brief_created",
+            "progress": 0,
+            "message": "✅ 项目简报已创建，请上传视频和音乐",
+            "brief": brief,
+            "brief_display": brief_to_display(brief),
+            "run_path": brief.get("run_path", ""),
+            "project_slug": brief.get("project_slug", ""),
+        }
+
+        return jsonify({
+            "task_id": task_id,
+            "project_slug": brief.get("project_slug", ""),
+            "brief": brief_to_display(brief),
+            "message": "简报已创建，请上传素材",
+        })
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        return jsonify({"error": f"创建简报失败: {str(e)}"}), 500
+
+
+@app.route("/api/upload/v3", methods=["POST"])
+def api_upload_v3():
+    """v3 Phase 2：上传视频和音乐，触发媒体扫描"""
+    project_slug = request.form.get("project_slug", "").strip()
+
+    if not project_slug:
+        return jsonify({"error": "请先创建项目简报（project_slug 不能为空）"}), 400
+
+    # 检查 video 文件
+    if "video" not in request.files:
+        return jsonify({"error": "请上传视频文件"}), 400
+
+    video_file = request.files["video"]
+    if video_file.filename == "":
+        return jsonify({"error": "请选择视频文件"}), 400
+
+    if not allowed_file(video_file.filename, config.ALLOWED_VIDEO_EXTENSIONS):
+        return jsonify({
+            "error": f"不支持的视频格式。支持: {', '.join(config.ALLOWED_VIDEO_EXTENSIONS)}"
+        }), 400
+
+    # 创建任务目录
+    task_dir = os.path.join(config.UPLOAD_FOLDER, project_slug)
+    os.makedirs(task_dir, exist_ok=True)
+
+    # 保存视频
+    video_filename = video_file.filename
+    video_path = os.path.join(task_dir, video_filename)
+    video_file.save(video_path)
+
+    # 保存音频
+    audio_paths = []
+    audio_files = request.files.getlist("audio")
+    for audio_file in audio_files:
+        if audio_file.filename == "":
+            continue
+        if not allowed_file(audio_file.filename, config.ALLOWED_AUDIO_EXTENSIONS):
+            continue
+        audio_path = os.path.join(task_dir, audio_file.filename)
+        audio_file.save(audio_path)
+        audio_paths.append(audio_path)
+
+    # 获取配置
+    editing_mode = request.form.get("editing_mode", "video_first")
+    custom_export_path = request.form.get("custom_export_path", "").strip() or None
+
+    # 尝试加载已有简报
+    run_path = ""
+    brief = {}
+    try:
+        if run_exists(project_slug):
+            from modules.workspace_manager import get_run_path
+            run_path = get_run_path(project_slug)
+            brief = load_artifact(run_path, "project-brief")
+    except Exception:
+        pass
+
+    # 创建/更新任务
+    task_id = project_slug
+
+    tasks[task_id] = {
+        "id": task_id,
+        "mode": "v3",
+        "phase": "media_scan",
+        "status": "uploaded",
+        "progress": 5,
+        "message": "文件已上传，开始媒体扫描...",
+        "video_path": video_path,
+        "audio_paths": audio_paths,
+        "video_filename": video_filename,
+        "audio_filenames": [os.path.basename(p) for p in audio_paths],
+        "editing_mode": editing_mode,
+        "custom_export_path": custom_export_path,
+        "run_path": run_path,
+        "project_slug": project_slug,
+        "brief": brief,
+        "brief_display": brief_to_display(brief) if brief else {},
+    }
+
+    # 后台启动媒体扫描
+    thread = threading.Thread(target=run_media_scan, args=(task_id,), daemon=True)
+    thread.start()
+
+    return jsonify({
+        "task_id": task_id,
+        "phase": "media_scan",
+        "message": "上传成功，正在后台扫描媒体...",
+    })
+
+
+@app.route("/api/pipeline/confirm/<task_id>", methods=["POST"])
+def api_pipeline_confirm(task_id: str):
+    """v3：确认当前阶段，进入下一阶段"""
+    task = _get_task_safe(task_id)
+    if not task:
+        return jsonify({"error": "任务不存在"}), 404
+
+    data = request.get_json() or {}
+    current_phase = data.get("phase", task.get("phase", ""))
+
+    next_phase = _get_next_phase(current_phase)
+    if not next_phase:
+        return jsonify({"error": f"当前阶段 '{current_phase}' 已是最后一个阶段"}), 400
+
+    # 启动下一阶段
+    if _launch_phase(task_id, next_phase):
+        return jsonify({
+            "task_id": task_id,
+            "previous_phase": current_phase,
+            "next_phase": next_phase,
+            "message": f"已确认 {current_phase}，进入 {next_phase}",
+        })
+    else:
+        return jsonify({"error": f"无法启动阶段: {next_phase}"}), 500
+
+
+@app.route("/api/pipeline/skip/<task_id>", methods=["POST"])
+def api_pipeline_skip(task_id: str):
+    """v3：跳过当前阶段（仅可选阶段可跳过，如 story）"""
+    task = _get_task_safe(task_id)
+    if not task:
+        return jsonify({"error": "任务不存在"}), 404
+
+    data = request.get_json() or {}
+    current_phase = data.get("phase", task.get("phase", ""))
+
+    # 只有故事阶段可以跳过
+    if current_phase != "story":
+        return jsonify({"error": f"阶段 '{current_phase}' 不可跳过"}), 400
+
+    next_phase = _get_next_phase(current_phase)
+    if not next_phase:
+        return jsonify({"error": "无法确定下一阶段"}), 400
+
+    # 跳过故事阶段
+    task["story"] = {}
+    task["story_display"] = {}
+
+    if _launch_phase(task_id, next_phase):
+        return jsonify({
+            "task_id": task_id,
+            "skipped_phase": current_phase,
+            "next_phase": next_phase,
+            "message": f"已跳过 {current_phase}，进入 {next_phase}",
+        })
+    else:
+        return jsonify({"error": f"无法启动阶段: {next_phase}"}), 500
+
+
+@app.route("/api/pipeline/retry/<task_id>", methods=["POST"])
+def api_pipeline_retry(task_id: str):
+    """v3：重试当前阶段（不覆盖已批准的产物）"""
+    task = _get_task_safe(task_id)
+    if not task:
+        return jsonify({"error": "任务不存在"}), 404
+
+    data = request.get_json() or {}
+    phase_name = data.get("phase", task.get("phase", ""))
+
+    if phase_name not in PHASE_HANDLERS:
+        return jsonify({"error": f"未知阶段: {phase_name}"}), 400
+
+    if _launch_phase(task_id, phase_name):
+        return jsonify({
+            "task_id": task_id,
+            "phase": phase_name,
+            "message": f"正在重试 {phase_name}...",
+        })
+    else:
+        return jsonify({"error": f"无法重试阶段: {phase_name}"}), 500
+
+
+@app.route("/api/pipeline/status/<task_id>")
+def api_pipeline_status(task_id: str):
+    """v3：查询完整的管道状态"""
+    task = _get_task_safe(task_id)
+    if not task:
+        return jsonify({"error": "任务不存在"}), 404
+
+    status = task.get("status", "")
+
+    # 判断哪些阶段数据可用
+    include_review = status in ("review_complete", "story_complete", "blueprint_complete",
+                                 "validation_complete", "completed")
+    include_story = status in ("story_complete", "blueprint_complete",
+                                "validation_complete", "completed")
+    include_blueprint = status in ("blueprint_complete", "validation_complete", "completed")
+    include_validation = status in ("validation_complete", "completed")
+    include_build = status == "completed"
+
+    return jsonify({
+        "task_id": task_id,
+        "mode": task.get("mode", "v3"),
+        "phase": task.get("phase", ""),
+        "status": status,
+        "progress": task.get("progress", 0),
+        "message": task.get("message", ""),
+        "brief": task.get("brief_display"),
+        "scan_preview": task.get("scan_preview"),
+        "review": task.get("review_display") if include_review else None,
+        "story": task.get("story_display") if include_story else None,
+        "blueprint": task.get("blueprint_display") if include_blueprint else None,
+        "validation": task.get("validation") if include_validation else None,
+        "draft_info": task.get("draft_info") if include_build else None,
+        "audit": task.get("audit") if include_build else None,
+        "pickup": task.get("pickup_display") if include_build else None,
+        "editing_mode": task.get("editing_mode", ""),
+        "export_path": task.get("custom_export_path") or config.OUTPUT_FOLDER,
+    })
+
+
+@app.route("/api/artifact/<project_slug>/<phase>")
+def api_get_artifact(project_slug: str, phase: str):
+    """v3：获取阶段产物 JSON"""
+    from modules.workspace_manager import get_run_path, load_artifact as load_art
+
+    valid_phases = ["project-brief", "media-manifest", "material-review",
+                    "story-script", "edit-blueprint", "blueprint-audit",
+                    "audit-report", "pickup-report"]
+
+    if phase not in valid_phases:
+        return jsonify({"error": f"未知阶段产物: {phase}（有效: {', '.join(valid_phases)}）"}), 400
+
+    try:
+        run_path = get_run_path(project_slug)
+        artifact = load_art(run_path, phase)
+        if not artifact:
+            return jsonify({"error": f"产物不存在: {phase}"}), 404
+        return jsonify(artifact)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+# ============================================
 # 启动
 # ============================================
 
 if __name__ == "__main__":
+    # Render.com 自动设置 $PORT，本地用 FLASK_PORT 或默认 5000
+    host = os.environ.get("FLASK_HOST", "127.0.0.1")
+    port = int(os.environ.get("PORT") or os.environ.get("FLASK_PORT", "5000"))
+    debug = os.environ.get("FLASK_DEBUG", "true").lower() == "true"
+
     print("=" * 60)
-    print("🎬 Movie Music Matcher - 电影音乐智能匹配")
+    print("🎬 Movie Music Matcher v3.0 — 电影音乐智能匹配")
     print("=" * 60)
     print(f"📂 上传目录: {config.UPLOAD_FOLDER}")
     print(f"🖼️  帧缓存目录: {config.FRAME_FOLDER}")
     print(f"📤 输出目录: {config.OUTPUT_FOLDER}")
+    workspace = getattr(config, "WORKSPACE_DIR", os.path.join(config.BASE_DIR, "workspace"))
+    print(f"📁 工作空间: {workspace}")
     print(f"✂️  剪映草稿目录: {config.CAPCUT_DRAFT_DIR}")
     print(f"🤖 AI 模型: {config.AI_MODEL}")
     print(f"🔑 API Key 已配置: {config.ANTHROPIC_API_KEY not in ('your-api-key-here', '')}")
     print("-" * 60)
-    print("🌐 在浏览器打开: http://localhost:5000")
+    print("🔄 v2.0 经典模式: /  (一键管线)")
+    print("🆕 v3.0 管道模式: /?v=3 (分阶段确认)")
+    print(f"🌐 在浏览器打开: http://{host}:{port}")
     print("=" * 60)
 
-    app.run(host="127.0.0.1", port=5000, debug=True)
+    app.run(host=host, port=port, debug=debug)

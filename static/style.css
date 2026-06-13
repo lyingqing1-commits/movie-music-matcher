@@ -773,6 +773,111 @@ header h1 {
     margin: 0;
 }
 
+/* ---- 教程弹窗（动态内容版）---- */
+.tutorial-modal-content {
+    max-width: 720px;
+}
+
+.tutorial-body {
+    max-height: 55vh;
+    overflow-y: auto;
+    padding-right: 8px;
+}
+
+.tutorial-body h3 {
+    font-size: 1rem;
+    color: var(--primary);
+    margin-bottom: 10px;
+    margin-top: 22px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 6px;
+}
+
+.tutorial-body h3:first-child {
+    margin-top: 0;
+}
+
+.tutorial-body p {
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+    line-height: 1.7;
+    margin-bottom: 10px;
+}
+
+.tutorial-body ul,
+.tutorial-body ol {
+    color: var(--text-secondary);
+    font-size: 0.88rem;
+    padding-left: 20px;
+    line-height: 1.8;
+    margin-bottom: 12px;
+}
+
+.tutorial-body li {
+    margin-bottom: 4px;
+}
+
+.tutorial-body code {
+    background: rgba(108, 99, 255, 0.15);
+    padding: 2px 6px;
+    border-radius: 4px;
+    font-size: 0.82rem;
+    color: #b4adff;
+}
+
+.tutorial-body strong {
+    color: var(--text);
+}
+
+.tutorial-body table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 16px;
+    font-size: 0.85rem;
+}
+
+.tutorial-body table td {
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text-secondary);
+    vertical-align: top;
+    line-height: 1.6;
+}
+
+.tutorial-body table td:first-child {
+    color: var(--text);
+    font-weight: 600;
+    white-space: nowrap;
+    width: 1%;
+}
+
+.tutorial-body hr {
+    border: none;
+    border-top: 1px solid var(--border);
+    margin: 16px 0;
+}
+
+.tutorial-body a {
+    color: var(--primary);
+    text-decoration: none;
+}
+
+.tutorial-body a:hover {
+    text-decoration: underline;
+}
+
+.tutorial-footer {
+    margin-top: 18px;
+    padding-top: 12px;
+    border-top: 1px solid var(--border);
+    text-align: center;
+}
+
+.tutorial-edit-hint {
+    font-size: 0.75rem;
+    color: #555;
+}
+
 /* ---- 音乐来源模式选择 ---- */
 .mode-selector {
     margin-bottom: 24px;
@@ -929,4 +1034,419 @@ header h1 {
     padding: 10px !important;
     font-size: 0.9rem !important;
     border-radius: 8px !important;
+}
+
+/* ---- 剪辑模式选择 ---- */
+.editing-mode-section {
+    margin-bottom: 24px;
+}
+
+.editing-mode-section h3 {
+    text-align: center;
+    margin-bottom: 10px;
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+}
+
+.editing-mode-cards .mode-card {
+    cursor: pointer;
+}
+
+.editing-mode-cards .mode-card .mode-icon {
+    font-size: 1.5rem;
+    margin-bottom: 4px;
+}
+
+.editing-mode-cards .mode-card .mode-title {
+    font-size: 0.92rem;
+}
+
+.editing-mode-cards .mode-card .mode-desc {
+    font-size: 0.76rem;
+}
+
+/* ---- v3.0 版本切换 ---- */
+.version-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.version-badge {
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    transition: opacity 0.3s;
+}
+
+.switch {
+    position: relative;
+    display: inline-block;
+    width: 48px;
+    height: 26px;
+}
+
+.switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+
+.slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    transition: 0.3s;
+    border-radius: 26px;
+}
+
+.slider:before {
+    position: absolute;
+    content: "";
+    height: 18px;
+    width: 18px;
+    left: 3px;
+    bottom: 3px;
+    background: var(--primary);
+    transition: 0.3s;
+    border-radius: 50%;
+}
+
+input:checked + .slider {
+    background: rgba(108, 99, 255, 0.15);
+    border-color: var(--primary);
+}
+
+input:checked + .slider:before {
+    transform: translateX(22px);
+}
+
+/* ---- v3 项目简报 ---- */
+.brief-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin-bottom: 24px;
+}
+
+.brief-section h2 {
+    margin-bottom: 18px;
+    font-size: 1.2rem;
+    color: var(--primary);
+}
+
+.brief-form {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.brief-row {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.brief-row label {
+    font-size: 0.82rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.brief-row .required {
+    color: var(--error);
+}
+
+.brief-row input[type="text"],
+.brief-row input[type="number"],
+.brief-row select,
+.brief-row textarea {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.9rem;
+    color: var(--text);
+    outline: none;
+    transition: border-color 0.2s;
+    font-family: inherit;
+}
+
+.brief-row input:focus,
+.brief-row select:focus,
+.brief-row textarea:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 8px rgba(108, 99, 255, 0.15);
+}
+
+.brief-row textarea {
+    resize: vertical;
+}
+
+.brief-row-3col {
+    flex-direction: row;
+    gap: 12px;
+}
+
+.brief-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.brief-col label {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+}
+
+.brief-col select {
+    width: 100%;
+}
+
+@media (max-width: 600px) {
+    .brief-row-3col {
+        flex-direction: column;
+    }
+}
+
+/* ---- v3 管道步骤 ---- */
+.pipeline-steps {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 32px 0;
+    gap: 0;
+    flex-wrap: wrap;
+}
+
+.pstep {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    opacity: 0.35;
+    transition: all 0.3s;
+    min-width: 60px;
+}
+
+.pstep.active {
+    opacity: 1;
+}
+
+.pstep.completed {
+    opacity: 1;
+}
+
+.pstep.completed .pstep-number {
+    background: var(--success);
+    border-color: var(--success);
+}
+
+.pstep-number {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 2px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.8rem;
+    background: var(--surface);
+    transition: all 0.3s;
+}
+
+.pstep.active .pstep-number {
+    border-color: var(--primary);
+    background: var(--primary);
+    box-shadow: 0 0 12px rgba(108, 99, 255, 0.4);
+}
+
+.pstep-label {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+/* ---- v3 确认面板 ---- */
+.approval-panel {
+    background: var(--surface);
+    border: 2px solid var(--primary);
+    border-radius: var(--radius);
+    padding: 24px;
+    margin: 24px 0;
+    animation: fadeIn 0.3s ease;
+}
+
+.approval-header h3 {
+    color: var(--primary);
+    margin-bottom: 8px;
+    font-size: 1.1rem;
+}
+
+.approval-header p {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.approval-review {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px;
+    margin: 14px 0;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.approval-actions {
+    display: flex;
+    gap: 10px;
+    justify-content: center;
+}
+
+.approval-actions .btn-secondary {
+    padding: 8px 20px;
+    font-size: 0.85rem;
+}
+
+/* ---- v3 迷你时间线 ---- */
+.mini-timeline {
+    display: flex;
+    height: 20px;
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+
+.mini-clip {
+    min-width: 3px;
+    transition: transform 0.15s;
+}
+
+.mini-clip:hover {
+    transform: scaleY(1.5);
+}
+
+/* ---- v3 结果 ---- */
+.export-path-display {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-family: "Consolas", "Courier New", monospace;
+    word-break: break-all;
+}
+
+/* ---- 导出路径设置 ---- */
+.export-path-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 24px;
+    overflow: hidden;
+}
+
+.export-path-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    cursor: pointer;
+    transition: background 0.2s;
+    user-select: none;
+}
+
+.export-path-header:hover {
+    background: var(--surface-hover);
+}
+
+.export-path-header h3 {
+    font-size: 0.95rem;
+    color: var(--text-secondary);
+    margin: 0;
+    white-space: nowrap;
+}
+
+.export-path-arrow {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    transition: transform 0.2s;
+}
+
+.export-path-default-hint {
+    font-size: 0.78rem;
+    color: #666;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.export-path-body {
+    padding: 0 18px 16px;
+}
+
+.export-path-input-row {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.export-path-input {
+    flex: 1;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+    font-size: 0.85rem;
+    color: var(--text);
+    font-family: "Consolas", "Courier New", monospace;
+    transition: border-color 0.2s;
+    outline: none;
+}
+
+.export-path-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 8px rgba(108, 99, 255, 0.15);
+}
+
+.export-path-input::placeholder {
+    color: #555;
+}
+
+.btn-reset-path {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1.1rem;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.btn-reset-path:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: var(--surface-hover);
+}
+
+.export-path-desc {
+    font-size: 0.78rem;
+    color: #666;
+    margin-top: 8px;
+    line-height: 1.5;
 }

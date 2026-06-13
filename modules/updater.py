@@ -21,7 +21,7 @@ from typing import Optional, Dict, Any, List, Tuple
 # 版本定义
 # ============================================
 
-APP_VERSION = "1.0.0"
+APP_VERSION = "2.0.0"
 
 # 兼容性矩阵
 # 每个 app 版本定义其支持的剪映/CapCut 版本范围
@@ -35,13 +35,19 @@ COMPATIBILITY: Dict[str, Dict[str, Any]] = {
         "jianyingpro": {"min": "10.5.0", "max": "11.0.0"},
         "capcut": {"min": "5.0.0", "max": "6.0.0"},
         "description": "改进节拍检测算法，新增剪映 11.x 支持",
-        # 以下 URL 在 Git 更新不可用时作为后备下载地址
-        # "download_url": "https://github.com/yourname/movie-music-matcher/releases/download/v1.1.0/release.zip",
+    },
+    "2.0.0": {
+        "jianyingpro": {"min": "10.0.0", "max": "12.0.0"},
+        "capcut": {"min": "5.0.0", "max": "7.0.0"},
+        "description": (
+            "🎬 智能剪辑引擎：AI 识别电影内容+场景检测+高光评分+音乐结构分析。"
+            "支持视频优先/音乐优先双模式。上传体积提升至 2GB。"
+        ),
     },
 }
 
 # 标记远程最新版本（与 Git 仓库中的版本保持一致）
-_REMOTE_LATEST_VERSION = "1.1.0"
+_REMOTE_LATEST_VERSION = "2.0.0"
 
 # 项目根目录
 _PROJECT_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -463,29 +469,72 @@ def get_compatibility_info(jyp_version: Optional[str]) -> Dict[str, Any]:
     }
 
 
+def _find_best_compatible_version(editor_version: Optional[str]) -> Optional[Tuple[str, Dict[str, Any]]]:
+    """
+    在兼容性矩阵中查找最适合当前剪映版本的最新应用版本。
+
+    遍历 COMPATIBILITY 中所有版本，筛选出：
+    1. 版本号 > 当前 APP_VERSION
+    2. 兼容已安装的剪映版本
+
+    Returns:
+        (version_string, version_info_dict) 或 None
+    """
+    if not editor_version:
+        # 未检测到剪映，返回全局最新版本
+        best_ver = _REMOTE_LATEST_VERSION
+        best_info = COMPATIBILITY.get(best_ver)
+        if best_info and _parse_version(best_ver) > _parse_version(APP_VERSION):
+            return (best_ver, best_info)
+        return None
+
+    current_ver = _parse_version(APP_VERSION)
+    candidates = []
+
+    for ver_str, ver_info in COMPATIBILITY.items():
+        parsed = _parse_version(ver_str)
+        if parsed <= current_ver:
+            continue  # 不比当前版本新
+
+        jyp_info = ver_info.get("jianyingpro", {})
+        if not jyp_info:
+            continue
+
+        if _version_in_range(editor_version, jyp_info["min"], jyp_info["max"]):
+            candidates.append((parsed, ver_str, ver_info))
+
+    if not candidates:
+        return None
+
+    # 返回版本号最高的
+    candidates.sort(key=lambda x: x[0], reverse=True)
+    best = candidates[0]
+    return (best[1], best[2])
+
+
 def check_for_updates(jyp_version: Optional[str] = None) -> Dict[str, Any]:
     """
     检查是否有可用的应用更新。
 
-    优先级：
-    1. Git 远程仓库检查（推荐）
-    2. 兼容性矩阵版本比较
+    智能匹配：找到兼容当前剪映版本的最新应用版本。
+    更新方式：
+    1. Git 远程仓库拉取（推荐）
+    2. URL 下载
+    3. 手动指引
     """
     compat = get_compatibility_info(jyp_version)
 
-    latest = COMPATIBILITY.get(_REMOTE_LATEST_VERSION, {})
-    matrix_has_update = _parse_version(_REMOTE_LATEST_VERSION) > _parse_version(APP_VERSION)
+    # ---- 找到最适合已安装剪映的版本 ----
+    editor_version = compat.get("editor_version")
+    best_match = _find_best_compatible_version(editor_version)
 
-    # 验证最新版本是否兼容用户的剪映
-    update_compatible = True
-    if matrix_has_update and compat.get("editor_version") and latest:
-        jyp_info = latest.get("jianyingpro", {})
-        if jyp_info:
-            update_compatible = _version_in_range(
-                compat["editor_version"],
-                jyp_info["min"],
-                jyp_info["max"],
-            )
+    target_version = None
+    target_info = None
+    matrix_has_update = False
+
+    if best_match:
+        target_version, target_info = best_match
+        matrix_has_update = True
 
     # ---- Git 检查 ----
     git_check = None
@@ -496,20 +545,21 @@ def check_for_updates(jyp_version: Optional[str] = None) -> Dict[str, Any]:
         git_available = git_check.get("available", False)
 
     # ---- 构建更新信息 ----
-    has_update = git_available or (matrix_has_update and update_compatible)
+    has_update = git_available or matrix_has_update
 
     update_info = None
-    if has_update and update_compatible:
+    if has_update and target_info:
         update_info = {
-            "version": _REMOTE_LATEST_VERSION,
-            "description": latest.get("description", ""),
-            "download_url": latest.get("download_url", ""),
+            "version": target_version,
+            "description": target_info.get("description", ""),
+            "download_url": target_info.get("download_url", ""),
             "compatible_jyp_range": "—",
             "compatible_capcut_range": "—",
             "update_method": "git" if git_available else "manual",
+            "best_for_editor": f"{compat.get('editor_name', '')} {editor_version or '未知'}",
         }
-        jyp_info = latest.get("jianyingpro", {})
-        capcut_info = latest.get("capcut", {})
+        jyp_info = target_info.get("jianyingpro", {})
+        capcut_info = target_info.get("capcut", {})
         if jyp_info:
             update_info["compatible_jyp_range"] = f"{jyp_info['min']} ~ {jyp_info['max']}"
         if capcut_info:
@@ -520,15 +570,24 @@ def check_for_updates(jyp_version: Optional[str] = None) -> Dict[str, Any]:
             update_info["git_remote_url"] = git_check.get("remote_url", "")
             update_info["git_behind_count"] = git_check.get("behind_count", 0)
 
+    # 确定更新方式
+    if git_available:
+        update_method = "git"
+    elif has_update:
+        update_method = "manual"
+    else:
+        update_method = None
+
     return {
         "app_version": APP_VERSION,
-        "latest_version": _REMOTE_LATEST_VERSION,
+        "latest_version": target_version or _REMOTE_LATEST_VERSION,
+        "target_version": target_version,
         "has_update": has_update,
         "update_info": update_info,
         "compatibility": compat,
-        "update_compatible": update_compatible,
+        "update_compatible": target_version is not None,
         "git_check": git_check,
-        "update_method": "git" if git_available else ("manual" if has_update else None),
+        "update_method": update_method,
     }
 
 

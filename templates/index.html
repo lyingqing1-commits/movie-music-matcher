@@ -17,81 +17,14 @@
 
         <!-- 教程弹窗 -->
         <div class="modal-overlay" id="tutorialModal" style="display:none;">
-            <div class="modal-content">
+            <div class="modal-content tutorial-modal-content">
                 <button class="modal-close" id="tutorialClose">&times;</button>
                 <h2>📖 使用教程</h2>
-
-                <div class="tutorial-section">
-                    <h3>🎯 这个工具能做什么？</h3>
-                    <p>上传一段<strong>电影/视频素材</strong>和一首<strong>音乐</strong>，AI 会自动：</p>
-                    <ol>
-                        <li>分析视频的画面风格（类型、情绪、色调、节奏）</li>
-                        <li>分析音乐的音频特征（BPM、能量、调性）</li>
-                        <li>匹配音乐与视频风格并打分</li>
-                        <li>按音乐节拍将视频<strong>自动切分为多段</strong>，生成剪映草稿</li>
-                    </ol>
+                <div class="tutorial-body" id="tutorialContent">
+                    <p style="color:var(--text-secondary)">加载中...</p>
                 </div>
-
-                <div class="tutorial-section">
-                    <h3>🚀 使用步骤</h3>
-                    <div class="tutorial-step">
-                        <span class="step-num">1</span>
-                        <div>
-                            <strong>上传视频</strong>
-                            <p>点击左侧"电影素材"框，选择你的视频文件（MP4/MOV 等，最大 500MB）</p>
-                        </div>
-                    </div>
-                    <div class="tutorial-step">
-                        <span class="step-num">2</span>
-                        <div>
-                            <strong>上传音乐</strong>
-                            <p>点击右侧"音乐文件"框，选择 1-3 首音乐（MP3/WAV 等）</p>
-                        </div>
-                    </div>
-                    <div class="tutorial-step">
-                        <span class="step-num">3</span>
-                        <div>
-                            <strong>开始分析</strong>
-                            <p>点击"开始分析匹配"按钮，AI 会自动完成所有步骤</p>
-                        </div>
-                    </div>
-                    <div class="tutorial-step">
-                        <span class="step-num">4</span>
-                        <div>
-                            <strong>查看结果 & 打开剪映</strong>
-                            <p>分析完成后会显示匹配评分和剪辑建议。草稿文件自动生成，在剪映中打开即可看到视频已被切分为多段</p>
-                        </div>
-                    </div>
-                </div>
-
-                <div class="tutorial-section">
-                    <h3>✂️ 视频切分规则</h3>
-                    <p>生成草稿时，视频会根据<strong>音乐 BPM（节拍）</strong>自动切分：</p>
-                    <ul>
-                        <li>每 <strong>2 拍</strong> 切一刀（BPM 120 = 每 1 秒一段）</li>
-                        <li>音乐比视频长 → 视频自动循环使用</li>
-                        <li>段与段之间有微小间隙，模拟手动剪辑效果</li>
-                        <li>在剪映中等效于按 <kbd>Ctrl+B</kbd> 切分视频</li>
-                    </ul>
-                </div>
-
-                <div class="tutorial-section">
-                    <h3>⚙️ 前置要求</h3>
-                    <ul>
-                        <li>✅ <strong>FFmpeg</strong>：程序会自动检测，无需手动配置</li>
-                        <li>✅ <strong>API Key</strong>：已在 config.py 中配置 DeepSeek API</li>
-                        <li>✅ <strong>剪映专业版</strong>：用于打开生成的草稿文件</li>
-                    </ul>
-                </div>
-
-                <div class="tutorial-section">
-                    <h3>💡 小贴士</h3>
-                    <ul>
-                        <li>匹配评分 ≥ 70 分时，草稿会自动添加淡入淡出效果</li>
-                        <li>上传多首音乐会自动排序，选出最佳匹配</li>
-                        <li>草稿保存在 <code>output/</code> 目录下</li>
-                        <li>如果剪映已安装，草稿会自动复制到剪映草稿目录</li>
-                    </ul>
+                <div class="tutorial-footer">
+                    <span class="tutorial-edit-hint">✏️ 编辑教程：桌面 → MovieMusicMatcher_教程.md</span>
                 </div>
             </div>
         </div>
@@ -196,8 +129,20 @@
         <!-- 头部 -->
         <header>
             <h1>🎬 电影 × 音乐 智能匹配</h1>
-            <p class="subtitle">上传电影素材和音乐，AI 自动分析风格、匹配音乐、生成剪映草稿</p>
+            <p class="subtitle" id="v2Subtitle">上传电影素材和音乐，AI 自动分析风格、匹配音乐、生成剪映草稿</p>
+            <p class="subtitle" id="v3Subtitle" style="display:none;">DaVinci 风格分阶段确认管线 — 简报 → 扫描 → 审查 → 蓝图 → 构建</p>
+            <div class="version-toggle" id="versionToggle">
+                <span class="version-badge" id="v2Badge">v2.0 经典</span>
+                <label class="switch">
+                    <input type="checkbox" id="v3Switch">
+                    <span class="slider"></span>
+                </label>
+                <span class="version-badge" id="v3Badge">v3.0 管道</span>
+            </div>
         </header>
+
+        <!-- v2.0 内容区 -->
+        <div id="v2Content">
 
         <!-- 步骤指示器 -->
         <div class="steps" id="steps">
@@ -218,7 +163,7 @@
             <div class="step-connector"></div>
             <div class="step" data-step="4">
                 <span class="step-number">4</span>
-                <span class="step-label">生成草稿</span>
+                <span class="step-label">智能剪辑</span>
             </div>
         </div>
 
@@ -229,7 +174,7 @@
                 <div class="upload-icon">🎥</div>
                 <h3>电影素材</h3>
                 <p>拖拽视频文件到此处，或点击选择</p>
-                <p class="upload-hint">支持 MP4, MOV, AVI, MKV, WebM（最大 500MB）</p>
+                <p class="upload-hint">支持 MP4, MOV, AVI, MKV, WebM（最大 2GB）</p>
                 <input type="file" id="videoInput" accept=".mp4,.mov,.avi,.mkv,.webm" hidden>
                 <div class="file-info" id="videoFileInfo"></div>
             </div>
@@ -244,6 +189,41 @@
                 <div class="file-info" id="audioFileInfo"></div>
             </div>
         </section>
+
+        <!-- 剪辑模式选择 -->
+        <div class="editing-mode-section" id="editingModeSection">
+            <h3>✂️ 剪辑模式</h3>
+            <div class="mode-cards editing-mode-cards">
+                <div class="mode-card active" data-mode="video_first" id="modeVideoFirst">
+                    <div class="mode-icon">🎬</div>
+                    <div class="mode-title">视频优先</div>
+                    <div class="mode-desc">突出视频"爽点""爆点"，音乐辅助视频产出</div>
+                </div>
+                <div class="mode-card" data-mode="music_first" id="modeMusicFirst">
+                    <div class="mode-icon">🎵</div>
+                    <div class="mode-title">音乐优先</div>
+                    <div class="mode-desc">视频剪辑跟随音乐结构，营造 MV 感</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 导出路径设置 -->
+        <div class="export-path-section" id="exportPathSection">
+            <div class="export-path-header" id="exportPathToggle">
+                <h3>📁 导出路径 <span class="export-path-arrow" id="exportPathArrow">▶</span></h3>
+                <span class="export-path-default-hint" id="exportPathHint"></span>
+            </div>
+            <div class="export-path-body" id="exportPathBody" style="display:none;">
+                <div class="export-path-input-row">
+                    <input type="text" id="exportPathInput" class="export-path-input"
+                           placeholder="留空则使用默认路径">
+                    <button type="button" id="resetExportPathBtn" class="btn-reset-path" title="恢复默认">↺</button>
+                </div>
+                <p class="export-path-desc">
+                    💡 设置草稿文件的保存位置。留空则自动保存到默认 output 目录。
+                </p>
+            </div>
+        </div>
 
         <!-- 开始按钮 -->
         <div class="action-bar">
@@ -287,7 +267,194 @@
                 </button>
             </div>
         </section>
-    </div>
+    </div><!-- /v2Content -->
+
+        <!-- ============================================ -->
+        <!-- v3.0 管道模式内容区 -->
+        <!-- ============================================ -->
+        <div id="v3Content" style="display:none;">
+
+            <!-- v3 项目简报表单 -->
+            <section class="brief-section" id="briefSection">
+                <h2>📋 项目简报</h2>
+                <div class="brief-form">
+                    <div class="brief-row">
+                        <label>项目主题 <span class="required">*</span></label>
+                        <input type="text" id="briefTopic" placeholder="例如：Inception 梦境分析混剪">
+                    </div>
+                    <div class="brief-row brief-row-3col">
+                        <div class="brief-col">
+                            <label>目标时长 (秒)</label>
+                            <input type="number" id="briefDuration" value="120" min="5" max="7200">
+                        </div>
+                        <div class="brief-col">
+                            <label>目标平台</label>
+                            <select id="briefPlatform">
+                                <option value="jianying">剪映专业版</option>
+                                <option value="capcut">CapCut</option>
+                                <option value="resolve">DaVinci Resolve</option>
+                                <option value="universal">通用（仅蓝图）</option>
+                            </select>
+                        </div>
+                        <div class="brief-col">
+                            <label>画幅比</label>
+                            <select id="briefAspectRatio">
+                                <option value="16:9">横屏 16:9</option>
+                                <option value="9:16">竖屏 9:16</option>
+                                <option value="1:1">方形 1:1</option>
+                                <option value="4:3">经典 4:3</option>
+                                <option value="original">保持原始</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="brief-row brief-row-3col">
+                        <div class="brief-col">
+                            <label>语言</label>
+                            <select id="briefLanguage">
+                                <option value="zh-CN">中文</option>
+                                <option value="en">English</option>
+                                <option value="ja">日本語</option>
+                            </select>
+                        </div>
+                        <div class="brief-col">
+                            <label>剪辑模式</label>
+                            <select id="briefEditingMode">
+                                <option value="video_first">🎬 视频优先</option>
+                                <option value="music_first">🎵 音乐优先</option>
+                            </select>
+                        </div>
+                        <div class="brief-col">
+                            <label>旁白/TTS</label>
+                            <select id="briefNarration">
+                                <option value="false">不需要</option>
+                                <option value="true">需要</option>
+                            </select>
+                        </div>
+                    </div>
+                    <div class="brief-row">
+                        <label>剪辑偏好（可选）</label>
+                        <textarea id="briefPreferences" rows="2" placeholder="例如：节奏克制，使用 J-cut，不要旁白..."></textarea>
+                    </div>
+                    <div class="action-bar">
+                        <button id="createBriefBtn" class="btn-primary">📋 创建简报 & 开始上传</button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- v3 上传区域（简报创建后显示） -->
+            <section class="upload-section" id="v3UploadSection" style="display:none;">
+                <div class="upload-box" id="v3VideoUploadBox">
+                    <div class="upload-icon">🎥</div>
+                    <h3>电影素材</h3>
+                    <p>拖拽视频文件，或点击选择</p>
+                    <p class="upload-hint">支持 MP4, MOV, AVI, MKV, WebM（最大 2GB）</p>
+                    <input type="file" id="v3VideoInput" accept=".mp4,.mov,.avi,.mkv,.webm" hidden>
+                    <div class="file-info" id="v3VideoFileInfo"></div>
+                </div>
+                <div class="upload-box" id="v3AudioUploadBox">
+                    <div class="upload-icon">🎵</div>
+                    <h3>音乐文件</h3>
+                    <p>拖拽音乐文件，或点击选择（可多选）</p>
+                    <p class="upload-hint">支持 MP3, WAV, FLAC, AAC, M4A, OGG</p>
+                    <input type="file" id="v3AudioInput" accept=".mp3,.wav,.flac,.aac,.m4a,.ogg" multiple hidden>
+                    <div class="file-info" id="v3AudioFileInfo"></div>
+                </div>
+            </section>
+
+            <!-- v3 剪辑模式+导出（上传后显示） -->
+            <div class="editing-mode-section" id="v3EditingSection" style="display:none;">
+                <h3>✂️ 剪辑模式</h3>
+                <div class="mode-cards editing-mode-cards">
+                    <div class="mode-card active" data-v3-mode="video_first">
+                        <div class="mode-icon">🎬</div>
+                        <div class="mode-title">视频优先</div>
+                        <div class="mode-desc">突出视频"爽点""爆点"</div>
+                    </div>
+                    <div class="mode-card" data-v3-mode="music_first">
+                        <div class="mode-icon">🎵</div>
+                        <div class="mode-title">音乐优先</div>
+                        <div class="mode-desc">视频跟随音乐结构</div>
+                    </div>
+                </div>
+                <div class="export-path-section" style="margin-top:12px;">
+                    <div class="export-path-header" id="v3ExportPathToggle">
+                        <h3>📁 导出路径 <span class="export-path-arrow" id="v3ExportPathArrow">▶</span></h3>
+                        <span class="export-path-default-hint" id="v3ExportPathHint"></span>
+                    </div>
+                    <div class="export-path-body" id="v3ExportPathBody" style="display:none;">
+                        <div class="export-path-input-row">
+                            <input type="text" id="v3ExportPathInput" class="export-path-input" placeholder="留空使用默认">
+                            <button type="button" id="v3ResetExportPathBtn" class="btn-reset-path" title="恢复默认">↺</button>
+                        </div>
+                        <p class="export-path-desc">💡 设置草稿保存位置。留空则自动保存到 output 目录。</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- v3 开始上传按钮 -->
+            <div class="action-bar" id="v3UploadBtnBar" style="display:none;">
+                <button id="v3StartBtn" class="btn-primary" disabled>🚀 开始管道处理</button>
+            </div>
+
+            <!-- v3 管道步骤指示器 -->
+            <div class="pipeline-steps" id="pipelineSteps" style="display:none;">
+                <div class="pstep" data-pstep="media_scan">
+                    <span class="pstep-number">1</span>
+                    <span class="pstep-label">媒体扫描</span>
+                </div>
+                <div class="step-connector"></div>
+                <div class="pstep" data-pstep="material_review">
+                    <span class="pstep-number">2</span>
+                    <span class="pstep-label">素材审查</span>
+                </div>
+                <div class="step-connector"></div>
+                <div class="pstep" data-pstep="story">
+                    <span class="pstep-number">3</span>
+                    <span class="pstep-label">故事开发</span>
+                </div>
+                <div class="step-connector"></div>
+                <div class="pstep" data-pstep="blueprint">
+                    <span class="pstep-number">4</span>
+                    <span class="pstep-label">剪辑蓝图</span>
+                </div>
+                <div class="step-connector"></div>
+                <div class="pstep" data-pstep="validate">
+                    <span class="pstep-number">5</span>
+                    <span class="pstep-label">蓝图验证</span>
+                </div>
+                <div class="step-connector"></div>
+                <div class="pstep" data-pstep="build">
+                    <span class="pstep-number">6</span>
+                    <span class="pstep-label">构建+审计</span>
+                </div>
+            </div>
+
+            <!-- v3 确认面板 -->
+            <div class="approval-panel" id="approvalPanel" style="display:none;">
+                <div class="approval-header">
+                    <h3 id="approvalTitle">阶段完成</h3>
+                    <p id="approvalSummary"></p>
+                </div>
+                <div class="approval-review" id="approvalReview"></div>
+                <div class="approval-actions">
+                    <button id="approveBtn" class="btn-primary">✅ 确认 & 继续</button>
+                    <button id="retryBtn" class="btn-secondary">🔄 重新分析</button>
+                    <button id="v3SkipBtn" class="btn-secondary" style="display:none;">⏭️ 跳过</button>
+                </div>
+            </div>
+
+            <!-- v3 结果区域（复用 v2 的 result-section 结构） -->
+            <section class="result-section" id="v3ResultSection" style="display:none;">
+                <h2>📊 管道结果</h2>
+                <div id="v3ResultContent"></div>
+                <div class="result-actions">
+                    <button class="btn-secondary" onclick="location.reload()">🔄 重新开始</button>
+                </div>
+            </section>
+
+        </div><!-- /v3Content -->
+
+    </div><!-- /container -->
 
     <script src="/static/script.js"></script>
 </body>

@@ -22,9 +22,25 @@ const steps = document.querySelectorAll(".step");
 const tutorialBtn = document.getElementById("tutorialBtn");
 const tutorialModal = document.getElementById("tutorialModal");
 const tutorialClose = document.getElementById("tutorialClose");
+const tutorialContent = document.getElementById("tutorialContent");
+let tutorialLoaded = false;
+
+async function loadTutorial() {
+    if (tutorialLoaded) return;
+    try {
+        const resp = await fetch("/api/tutorial");
+        const data = await resp.json();
+        tutorialContent.innerHTML = data.html;
+        tutorialLoaded = true;
+    } catch (err) {
+        tutorialContent.innerHTML =
+            `<p style="color:var(--error)">加载教程失败: ${err.message}</p>`;
+    }
+}
 
 tutorialBtn.addEventListener("click", () => {
     tutorialModal.style.display = "flex";
+    loadTutorial();
 });
 tutorialClose.addEventListener("click", () => {
     tutorialModal.style.display = "none";
@@ -42,6 +58,58 @@ document.addEventListener("keydown", (e) => {
 
 let videoFile = null;
 let audioFiles = [];
+let editingMode = "video_first";
+let customExportPath = "";
+
+// ---- 剪辑模式选择 ----
+document.querySelectorAll(".editing-mode-cards .mode-card").forEach(card => {
+    card.addEventListener("click", () => {
+        document.querySelectorAll(".editing-mode-cards .mode-card")
+            .forEach(c => c.classList.remove("active"));
+        card.classList.add("active");
+        editingMode = card.dataset.mode;
+    });
+});
+
+// ---- 导出路径设置 ----
+const exportPathToggle = document.getElementById("exportPathToggle");
+const exportPathBody = document.getElementById("exportPathBody");
+const exportPathArrow = document.getElementById("exportPathArrow");
+const exportPathInput = document.getElementById("exportPathInput");
+const exportPathHint = document.getElementById("exportPathHint");
+const resetExportPathBtn = document.getElementById("resetExportPathBtn");
+
+// 从后端加载默认导出路径
+async function loadDefaultExportPath() {
+    try {
+        const resp = await fetch("/api/default-export-path");
+        const data = await resp.json();
+        exportPathInput.placeholder = data.default_path || "";
+        exportPathHint.textContent = "默认: " + (data.default_path || "");
+    } catch (err) {
+        console.warn("加载默认导出路径失败:", err.message);
+    }
+}
+loadDefaultExportPath();
+
+// 折叠/展开导出路径设置
+exportPathToggle.addEventListener("click", () => {
+    const isOpen = exportPathBody.style.display !== "none";
+    if (isOpen) {
+        exportPathBody.style.display = "none";
+        exportPathArrow.textContent = "▶";
+    } else {
+        exportPathBody.style.display = "block";
+        exportPathArrow.textContent = "▼";
+    }
+});
+
+// 重置为默认路径
+resetExportPathBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    exportPathInput.value = "";
+    customExportPath = "";
+});
 
 // ---- 上传框点击事件 ----
 videoUploadBox.addEventListener("click", () => videoInput.click());
@@ -125,6 +193,12 @@ startBtn.addEventListener("click", async () => {
     const formData = new FormData();
     formData.append("video", videoFile);
     formData.append("mode", "manual");
+    formData.append("editing_mode", editingMode);
+    // 读取自定义导出路径
+    customExportPath = exportPathInput.value.trim();
+    if (customExportPath) {
+        formData.append("custom_export_path", customExportPath);
+    }
     audioFiles.forEach((f) => formData.append("audio", f));
 
     try {
@@ -285,14 +359,77 @@ function showResults(data) {
         matchContent.innerHTML = `<p style="color:var(--text-secondary)">未找到匹配结果</p>`;
     }
 
+    // 智能剪辑信息
+    if (data.smart_segments_info) {
+        const ssi = data.smart_segments_info;
+        const smartCard = document.createElement("div");
+        smartCard.className = "result-card";
+        const modeLabel = data.editing_mode === "video_first" ? "🎬 视频优先" : "🎵 音乐优先";
+        smartCard.innerHTML = `
+            <h3>✂️ 智能剪辑详情</h3>
+            <div class="result-grid">
+                <div class="result-item">
+                    <span class="result-label">剪辑模式</span>
+                    <span class="result-value">${modeLabel}</span>
+                </div>
+                <div class="result-item">
+                    <span class="result-label">检测场景</span>
+                    <span class="result-value">${ssi.scene_count || "?"} 个</span>
+                </div>
+                <div class="result-item">
+                    <span class="result-label">生成片段</span>
+                    <span class="result-value">${ssi.segment_count || "?"} 个</span>
+                </div>
+            </div>
+        `;
+        document.getElementById("resultSection").appendChild(smartCard);
+    }
+
+    // 电影识别信息
+    if (data.movie_identity && data.movie_identity.identified) {
+        const mi = data.movie_identity;
+        const movieCard = document.createElement("div");
+        movieCard.className = "result-card";
+        const knowledge = mi.ai_knowledge || {};
+        movieCard.innerHTML = `
+            <h3>🎬 已识别电影</h3>
+            <p><strong>${mi.movie_name}</strong> (${mi.year || ""}) — 置信度: ${mi.confidence || "?"}</p>
+            ${knowledge.plot_summary ? `<p style="font-size:0.85rem;color:var(--text-secondary);margin-top:6px;">${knowledge.plot_summary}</p>` : ""}
+            ${knowledge.themes && knowledge.themes.length ? `<div class="themes-list" style="margin-top:8px;">${knowledge.themes.map(t => `<span class="theme-tag">${t}</span>`).join("")}</div>` : ""}
+        `;
+        document.getElementById("resultSection").appendChild(movieCard);
+    }
+
+    // 音乐结构信息
+    if (data.music_structure && data.music_structure.structure) {
+        const ms = data.music_structure;
+        const structCard = document.createElement("div");
+        structCard.className = "result-card";
+        structCard.innerHTML = `
+            <h3>🎵 音乐结构分析</h3>
+            <div class="music-structure-viz" style="display:flex;height:24px;border-radius:6px;overflow:hidden;margin-bottom:8px;">
+                ${ms.structure.map(s => {
+                    const colors = {intro:"#4a90d9", verse:"#67c23a", pre_chorus:"#e6a23c", chorus:"#f56c6c", drop:"#ff3b3b", bridge:"#909399", buildup:"#e6a23c", outro:"#4a90d9", breakdown:"#909399", interlude:"#b0c4de", final_chorus:"#ff3b3b", climax:"#ff3b3b"};
+                    const color = colors[s.section] || "#909399";
+                    const pct = (s.duration / ms.duration * 100).toFixed(1);
+                    return `<div title="${s.section}: ${s.start_time.toFixed(0)}s-${s.end_time.toFixed(0)}s" style="width:${pct}%;background:${color};min-width:2px;"></div>`;
+                }).join("")}
+            </div>
+            <p style="font-size:0.8rem;color:var(--text-secondary);">${ms.overall_structure || ""}</p>
+        `;
+        document.getElementById("resultSection").appendChild(structCard);
+    }
+
     // 草稿信息
     if (data.draft_info) {
         const draft = data.draft_info;
+        const exportPath = data.export_path || "";
         const draftCard = document.createElement("div");
         draftCard.className = "result-card";
         draftCard.innerHTML = `
             <h3>✂️ 剪映草稿已生成</h3>
             <p style="margin-bottom:8px;">草稿名称: <strong>${draft.draft_name}</strong></p>
+            <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:8px;">📁 导出位置: <code style="font-size:0.78rem;">${exportPath}</code></p>
             ${draft.capcut_draft_path
                 ? `<p style="color:var(--success);">✅ 草稿已自动复制到剪映目录，请在剪映中打开查看！</p>`
                 : `<p style="color:var(--text-secondary);">📂 草稿保存在: ${draft.draft_folder}</p>
@@ -421,6 +558,12 @@ async function checkForUpdate() {
             document.getElementById("updateLatestJyp").textContent =
                 info.compatible_jyp_range || "—";
             document.getElementById("updateAvailableSection").style.display = "block";
+
+            // 更新目标说明
+            if (info.best_for_editor) {
+                document.getElementById("updateLatestVersion").textContent =
+                    `v${info.version}（适配 ${info.best_for_editor}）`;
+            }
 
             // 更新方式
             const methodRow = document.getElementById("updateMethodRow");
@@ -556,4 +699,523 @@ async function pollUpdateProgress() {
     }
 
     throw new Error("更新超时，请重试");
+}
+
+// ============================================
+// v3.0 管道模式
+// ============================================
+
+let isV3Mode = false;
+let v3TaskId = null;
+let v3CurrentPhase = "";
+let v3ProjectSlug = "";
+let v3EditingMode = "video_first";
+let v3CustomExportPath = "";
+let v3VideoFile = null;
+let v3AudioFiles = [];
+
+// ---- v3/v2 模式切换 ----
+const v3Switch = document.getElementById("v3Switch");
+const v2Content = document.getElementById("v2Content");
+const v3Content = document.getElementById("v3Content");
+const v2Subtitle = document.getElementById("v2Subtitle");
+const v3Subtitle = document.getElementById("v3Subtitle");
+
+// 检测 URL 参数 ?v=3
+if (window.location.search.includes("v=3")) {
+    v3Switch.checked = true;
+    switchToV3();
+}
+
+v3Switch.addEventListener("change", () => {
+    if (v3Switch.checked) {
+        switchToV3();
+        // 更新 URL
+        if (!window.location.search.includes("v=3")) {
+            window.history.replaceState({}, "", "?v=3");
+        }
+    } else {
+        switchToV2();
+        window.history.replaceState({}, "", window.location.pathname);
+    }
+});
+
+function switchToV3() {
+    isV3Mode = true;
+    v2Content.style.display = "none";
+    v3Content.style.display = "block";
+    v2Subtitle.style.display = "none";
+    v3Subtitle.style.display = "";
+    document.getElementById("v2Badge").style.opacity = "0.5";
+    document.getElementById("v3Badge").style.opacity = "1";
+    // 隐藏 v2 的教程和更新按钮
+    document.getElementById("tutorialBtn").style.display = "none";
+    document.getElementById("updateBtn").style.display = "none";
+    initV3Mode();
+}
+
+function switchToV2() {
+    isV3Mode = false;
+    v2Content.style.display = "";
+    v3Content.style.display = "none";
+    v2Subtitle.style.display = "";
+    v3Subtitle.style.display = "none";
+    document.getElementById("v2Badge").style.opacity = "1";
+    document.getElementById("v3Badge").style.opacity = "0.5";
+    document.getElementById("tutorialBtn").style.display = "";
+    document.getElementById("updateBtn").style.display = "";
+}
+
+// ---- v3 初始化 ----
+function initV3Mode() {
+    // 简报创建
+    document.getElementById("createBriefBtn").addEventListener("click", createBrief);
+
+    // v3 上传
+    setupV3Upload();
+
+    // v3 剪辑模式
+    document.querySelectorAll("[data-v3-mode]").forEach(card => {
+        card.addEventListener("click", () => {
+            document.querySelectorAll("[data-v3-mode]")
+                .forEach(c => c.classList.remove("active"));
+            card.classList.add("active");
+            v3EditingMode = card.dataset.v3Mode;
+        });
+    });
+
+    // v3 导出路径
+    loadV3ExportPath();
+    document.getElementById("v3ExportPathToggle").addEventListener("click", () => {
+        const body = document.getElementById("v3ExportPathBody");
+        const arrow = document.getElementById("v3ExportPathArrow");
+        if (body.style.display !== "none") {
+            body.style.display = "none";
+            arrow.textContent = "▶";
+        } else {
+            body.style.display = "block";
+            arrow.textContent = "▼";
+        }
+    });
+    document.getElementById("v3ResetExportPathBtn").addEventListener("click", (e) => {
+        e.stopPropagation();
+        document.getElementById("v3ExportPathInput").value = "";
+        v3CustomExportPath = "";
+    });
+
+    // v3 开始按钮
+    document.getElementById("v3StartBtn").addEventListener("click", startV3Pipeline);
+
+    // 确认面板按钮
+    document.getElementById("approveBtn").addEventListener("click", approvePhase);
+    document.getElementById("retryBtn").addEventListener("click", retryPhase);
+    document.getElementById("v3SkipBtn").addEventListener("click", skipPhase);
+}
+
+async function loadV3ExportPath() {
+    try {
+        const resp = await fetch("/api/default-export-path");
+        const data = await resp.json();
+        document.getElementById("v3ExportPathInput").placeholder = data.default_path || "";
+        document.getElementById("v3ExportPathHint").textContent = "默认: " + (data.default_path || "");
+    } catch (err) {
+        console.warn("加载默认导出路径失败:", err.message);
+    }
+}
+
+// ---- v3 简报创建 ----
+async function createBrief() {
+    const topic = document.getElementById("briefTopic").value.trim();
+    if (!topic) {
+        alert("请输入项目主题");
+        return;
+    }
+
+    const briefData = {
+        topic: topic,
+        target_duration: parseInt(document.getElementById("briefDuration").value) || 120,
+        platform: document.getElementById("briefPlatform").value,
+        aspect_ratio: document.getElementById("briefAspectRatio").value,
+        language: document.getElementById("briefLanguage").value,
+        editing_mode: document.getElementById("briefEditingMode").value,
+        narration_enabled: document.getElementById("briefNarration").value === "true",
+        editing_preferences: document.getElementById("briefPreferences").value,
+    };
+
+    try {
+        const resp = await fetch("/api/brief/create", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(briefData),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || "创建失败");
+
+        v3TaskId = data.task_id;
+        v3ProjectSlug = data.project_slug;
+
+        // 显示上传区域
+        document.getElementById("briefSection").style.display = "none";
+        document.getElementById("v3UploadSection").style.display = "grid";
+        document.getElementById("v3EditingSection").style.display = "block";
+        document.getElementById("v3UploadBtnBar").style.display = "block";
+
+        alert("✅ 简报已创建！项目: " + data.project_slug + "\n请选择视频和音乐文件后点击「开始管道处理」");
+    } catch (err) {
+        alert("创建简报失败: " + err.message);
+    }
+}
+
+// ---- v3 上传设置 ----
+function setupV3Upload() {
+    const v3VideoBox = document.getElementById("v3VideoUploadBox");
+    const v3AudioBox = document.getElementById("v3AudioUploadBox");
+    const v3VideoInput = document.getElementById("v3VideoInput");
+    const v3AudioInput = document.getElementById("v3AudioInput");
+
+    v3VideoBox.addEventListener("click", () => v3VideoInput.click());
+    v3AudioBox.addEventListener("click", () => v3AudioInput.click());
+
+    v3VideoInput.addEventListener("change", () => {
+        if (v3VideoInput.files.length > 0) {
+            v3VideoFile = v3VideoInput.files[0];
+            document.getElementById("v3VideoFileInfo").textContent =
+                "✅ " + v3VideoFile.name + " (" + (v3VideoFile.size / 1024 / 1024).toFixed(1) + " MB)";
+            v3VideoBox.classList.add("has-file");
+            checkV3Ready();
+        }
+    });
+
+    v3AudioInput.addEventListener("change", () => {
+        v3AudioFiles = Array.from(v3AudioInput.files);
+        if (v3AudioFiles.length > 0) {
+            document.getElementById("v3AudioFileInfo").innerHTML = "✅ " +
+                v3AudioFiles.map(f => f.name + " (" + (f.size / 1024 / 1024).toFixed(1) + " MB)").join("<br>");
+            v3AudioBox.classList.add("has-file");
+            checkV3Ready();
+        }
+    });
+
+    // 拖拽支持
+    [v3VideoBox, v3AudioBox].forEach(box => {
+        box.addEventListener("dragover", e => { e.preventDefault(); box.style.borderColor = "var(--primary)"; });
+        box.addEventListener("dragleave", () => { box.style.borderColor = "var(--border)"; });
+        box.addEventListener("drop", e => {
+            e.preventDefault();
+            box.style.borderColor = "var(--border)";
+            const files = e.dataTransfer.files;
+            if (box === v3VideoBox && files.length > 0) {
+                v3VideoFile = files[0];
+                document.getElementById("v3VideoFileInfo").textContent =
+                    "✅ " + v3VideoFile.name;
+                box.classList.add("has-file");
+                checkV3Ready();
+            } else if (box === v3AudioBox) {
+                v3AudioFiles = Array.from(files);
+                document.getElementById("v3AudioFileInfo").innerHTML = "✅ " +
+                    v3AudioFiles.map(f => f.name).join("<br>");
+                box.classList.add("has-file");
+                checkV3Ready();
+            }
+        });
+    });
+}
+
+function checkV3Ready() {
+    document.getElementById("v3StartBtn").disabled = !(v3VideoFile && v3AudioFiles.length > 0);
+}
+
+// ---- v3 管道启动 ----
+async function startV3Pipeline() {
+    if (!v3VideoFile) return;
+
+    v3CustomExportPath = document.getElementById("v3ExportPathInput").value.trim();
+
+    const formData = new FormData();
+    formData.append("video", v3VideoFile);
+    formData.append("project_slug", v3ProjectSlug);
+    formData.append("editing_mode", v3EditingMode);
+    if (v3CustomExportPath) {
+        formData.append("custom_export_path", v3CustomExportPath);
+    }
+    v3AudioFiles.forEach(f => formData.append("audio", f));
+
+    // 隐藏上传区，显示管道步骤
+    document.getElementById("v3UploadBtnBar").style.display = "none";
+    document.getElementById("pipelineSteps").style.display = "flex";
+    document.getElementById("v3UploadSection").style.display = "none";
+    document.getElementById("v3EditingSection").style.display = "none";
+
+    try {
+        const resp = await fetch("/api/upload/v3", {
+            method: "POST",
+            body: formData,
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error);
+
+        v3TaskId = data.task_id;
+        v3CurrentPhase = data.phase || "media_scan";
+        updatePipelineStep(v3CurrentPhase, "active");
+        await pollV3Pipeline();
+    } catch (err) {
+        alert("管道启动失败: " + err.message);
+    }
+}
+
+// ---- v3 管道轮询 ----
+async function pollV3Pipeline() {
+    const maxAttempts = 600;
+    let attempts = 0;
+
+    while (attempts < maxAttempts) {
+        await sleep(1000);
+        attempts++;
+
+        try {
+            const resp = await fetch("/api/pipeline/status/" + v3TaskId);
+            const data = await resp.json();
+
+            v3CurrentPhase = data.phase || v3CurrentPhase;
+            updatePipelineStep(v3CurrentPhase, "active");
+
+            // 检查是否完成或等待确认
+            const status = data.status || "";
+            if (status.endsWith("_complete")) {
+                updatePipelineStep(v3CurrentPhase, "completed");
+                showApprovalPanel(v3CurrentPhase, data);
+                return;
+            }
+
+            if (status === "completed") {
+                markAllPipelineStepsDone();
+                showV3Results(data);
+                return;
+            }
+
+            if (status === "error") {
+                throw new Error(data.message);
+            }
+
+            // 更新进度信息
+            if (data.message) {
+                updatePipelineStep(v3CurrentPhase, "active");
+            }
+        } catch (err) {
+            if (err.message && (err.message.includes("❌") || err.message.includes("失败"))) {
+                alert("管道处理出错: " + err.message);
+                return;
+            }
+            console.warn("v3 管道轮询失败，重试中...", err.message);
+        }
+    }
+
+    alert("管道处理超时");
+}
+
+// ---- v3 确认面板 ----
+function showApprovalPanel(phase, data) {
+    const panel = document.getElementById("approvalPanel");
+    panel.style.display = "block";
+
+    const phaseNames = {
+        "media_scan": "媒体扫描",
+        "material_review": "素材审查",
+        "story": "故事开发",
+        "blueprint": "剪辑蓝图",
+        "validate": "蓝图验证",
+    };
+
+    document.getElementById("approvalTitle").textContent =
+        (phaseNames[phase] || phase) + " 完成";
+
+    let summary = "";
+    const review = document.getElementById("approvalReview");
+
+    switch (phase) {
+        case "media_scan":
+            const scan = data.scan_preview || {};
+            summary = `扫描了 ${scan.total_files || "?"} 个文件（${scan.duration_display || ""}）`;
+            review.innerHTML = scan.files ? scan.files.map(f =>
+                `<div style="padding:4px 0;">${f.filename} (${f.size_mb}MB, ${f.duration}s)</div>`
+            ).join("") : "<p>已生成 media-manifest.json</p>";
+            break;
+        case "material_review":
+            const rv = data.review || {};
+            summary = `识别: ${rv.movie_name || "未知"} | 类型: ${rv.genre || ""} | 情绪: ${rv.mood || ""}`;
+            review.innerHTML = `
+                <p><strong>分类:</strong> 动作强度=${rv.action_intensity || ""}, 情绪范围=${(rv.emotional_range || []).join(", ")}</p>
+                <p><strong>叙事用途:</strong> ${(rv.narrative_uses || []).join(", ")}</p>
+            `;
+            break;
+        case "story":
+            const st = data.story || {};
+            summary = st.core_idea || "故事开发完成";
+            review.innerHTML = `
+                <p><strong>核心创意:</strong> ${st.core_idea || ""}</p>
+                <p><strong>叙事结构:</strong> ${st.selected_structure || ""}</p>
+                <p><strong>情绪曲线:</strong> ${st.emotional_curve || ""}</p>
+                <p><strong>场景节拍:</strong> ${(st.scene_beats || []).length} 个</p>
+            `;
+            document.getElementById("v3SkipBtn").style.display = "";  // 故事可跳过
+            break;
+        case "blueprint":
+            const bp = data.blueprint || {};
+            summary = `${bp.total_clips || "?"} 个片段, ${bp.total_duration || "?"}s, 平均分 ${bp.avg_highlight_score || "?"}`;
+            // 简易时间线可视化
+            let viz = '<div class="mini-timeline">';
+            (bp.clips || []).forEach(c => {
+                const toneColors = {
+                    action: "#ff3b3b", emotional: "#ff9800", tension: "#e91e63",
+                    calm: "#4caf50", triumph: "#ff9800", climax: "#ff3b3b",
+                    mystery: "#9c27b0", melancholy: "#607d8b"
+                };
+                const color = toneColors[c.emotional_tone] || "#6c63ff";
+                viz += `<div class="mini-clip" style="background:${color};flex:${c.duration || 1};" title="${c.emotional_tone}: ${c.purpose}"></div>`;
+            });
+            viz += '</div>';
+            review.innerHTML = viz +
+                '<p style="margin-top:8px;">情绪分布: ' + JSON.stringify(bp.emotional_tones || {}) + '</p>';
+            document.getElementById("v3SkipBtn").style.display = "none";
+            break;
+        case "validate":
+            const val = data.validation || {};
+            summary = val.summary || "";
+            review.innerHTML = (val.issues || []).map(i =>
+                `<div style="padding:2px 0;color:${i.level === 'error' ? 'var(--error)' : 'var(--warning)'};">${i.level}: ${i.message}</div>`
+            ).join("") || "<p>验证通过</p>";
+            document.getElementById("v3SkipBtn").style.display = "none";
+            break;
+        default:
+            summary = "阶段完成";
+            review.innerHTML = "<p>准备进入下一阶段</p>";
+    }
+
+    document.getElementById("approvalSummary").textContent = summary;
+    panel.scrollIntoView({ behavior: "smooth" });
+}
+
+// ---- v3 确认/重试/跳过 ----
+async function approvePhase() {
+    document.getElementById("approvalPanel").style.display = "none";
+    try {
+        const resp = await fetch("/api/pipeline/confirm/" + v3TaskId, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phase: v3CurrentPhase }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error);
+
+        v3CurrentPhase = data.next_phase;
+        updatePipelineStep(v3CurrentPhase, "active");
+        await pollV3Pipeline();
+    } catch (err) {
+        alert("确认失败: " + err.message);
+    }
+}
+
+async function retryPhase() {
+    document.getElementById("approvalPanel").style.display = "none";
+    try {
+        const resp = await fetch("/api/pipeline/retry/" + v3TaskId, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phase: v3CurrentPhase }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error);
+        await pollV3Pipeline();
+    } catch (err) {
+        alert("重试失败: " + err.message);
+    }
+}
+
+async function skipPhase() {
+    document.getElementById("approvalPanel").style.display = "none";
+    try {
+        const resp = await fetch("/api/pipeline/skip/" + v3TaskId, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phase: v3CurrentPhase }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error);
+
+        v3CurrentPhase = data.next_phase;
+        updatePipelineStep(v3CurrentPhase, "active");
+        await pollV3Pipeline();
+    } catch (err) {
+        alert("跳过失败: " + err.message);
+    }
+}
+
+// ---- v3 管道步骤可视化 ----
+function updatePipelineStep(phase, status) {
+    const phaseMap = {
+        "media_scan": 0, "material_review": 1, "story": 2,
+        "blueprint": 3, "validate": 4, "build": 5
+    };
+    const activeIdx = phaseMap[phase] || 0;
+
+    document.querySelectorAll(".pstep").forEach((step, idx) => {
+        step.classList.remove("active", "completed");
+        if (idx < activeIdx) step.classList.add("completed");
+        if (idx === activeIdx && status === "active") step.classList.add("active");
+        if (idx === activeIdx && status === "completed") step.classList.add("completed");
+    });
+}
+
+function markAllPipelineStepsDone() {
+    document.querySelectorAll(".pstep").forEach(step => {
+        step.classList.remove("active");
+        step.classList.add("completed");
+    });
+}
+
+// ---- v3 结果显示 ----
+function showV3Results(data) {
+    document.getElementById("pipelineSteps").style.display = "none";
+    const resultSection = document.getElementById("v3ResultSection");
+    resultSection.style.display = "block";
+
+    let html = "";
+
+    // 草稿信息
+    if (data.draft_info) {
+        const draft = data.draft_info;
+        html += `<div class="result-card">
+            <h3>✂️ 剪映草稿已生成</h3>
+            <p>草稿: <strong>${draft.draft_name}</strong></p>
+            <p class="export-path-display">📁 ${data.export_path || ""}</p>
+            ${draft.capcut_draft_path ? '<p style="color:var(--success);">✅ 已同步到剪映目录</p>' : ''}
+        </div>`;
+    }
+
+    // 审计报告
+    if (data.audit) {
+        const audit = data.audit;
+        html += `<div class="result-card">
+            <h3>📊 审计报告</h3>
+            <p>${audit.summary || ""}</p>
+            ${(audit.issues || []).slice(0, 5).map(i =>
+                `<div style="color:${i.level === 'error' ? 'var(--error)' : 'var(--warning)'};font-size:0.85rem;">• ${i.message}</div>`
+            ).join("")}
+        </div>`;
+    }
+
+    // 补拍建议
+    if (data.pickup) {
+        const pu = data.pickup;
+        html += `<div class="result-card">
+            <h3>📋 补拍建议</h3>
+            <p>P0(必须): ${pu.p0_count || 0} | P1(建议): ${pu.p1_count || 0} | P2(可选): ${pu.p2_count || 0}</p>
+            ${(pu.p0_items || []).slice(0, 3).map(i =>
+                `<div style="font-size:0.85rem;margin-top:4px;">• <strong>${i.missing_info || ""}</strong>: ${i.shot_spec?.subject || ""}</div>`
+            ).join("")}
+        </div>`;
+    }
+
+    document.getElementById("v3ResultContent").innerHTML = html || "<p>分析完成</p>";
+    resultSection.scrollIntoView({ behavior: "smooth" });
 }

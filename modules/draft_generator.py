@@ -109,25 +109,44 @@ def create_draft(
     video_info: dict,
     match_result: dict,
     task_id: str,
+    smart_segments: list[dict] = None,
+    editing_mode: str = None,
+    custom_output_dir: str = None,
 ) -> dict:
     """创建剪映草稿
 
     优先使用 pyJianYingDraft（产生标准格式），
     不可用时回退到手动 JSON。
+
+    新增参数：
+        smart_segments: 智能编辑引擎产生的放置计划（可选）
+                       格式：[{source_start, source_duration, target_start}, ...]
+                       提供时跳过节拍等分，直接使用智能分段
+        editing_mode: "video_first" | "music_first" | None
+        custom_output_dir: 用户自定义的导出目录（可选），为 None 时使用默认 OUTPUT_FOLDER
     """
+    mode_desc = ""
+    if editing_mode == "video_first":
+        mode_desc = "（视频优先模式：突出高光片段）"
+    elif editing_mode == "music_first":
+        mode_desc = "（音乐优先模式：MV 感剪辑）"
+
     if HAS_JYD:
         try:
             return _create_draft_with_jyd(
-                video_path, audio_path, video_info, match_result, task_id
+                video_path, audio_path, video_info, match_result, task_id,
+                smart_segments, editing_mode, custom_output_dir,
             )
         except Exception as e:
             print(f"[WARN] pyJianYingDraft 失败 ({e})，回退到手动 JSON 模式")
             return _create_draft_manual(
-                video_path, audio_path, video_info, match_result, task_id
+                video_path, audio_path, video_info, match_result, task_id,
+                smart_segments, editing_mode, custom_output_dir,
             )
     else:
         return _create_draft_manual(
-            video_path, audio_path, video_info, match_result, task_id
+            video_path, audio_path, video_info, match_result, task_id,
+            smart_segments, editing_mode, custom_output_dir,
         )
 
 
@@ -141,9 +160,17 @@ def _create_draft_with_jyd(
     video_info: dict,
     match_result: dict,
     task_id: str,
+    smart_segments: list[dict] = None,
+    editing_mode: str = None,
+    custom_output_dir: str = None,
 ) -> dict:
     """使用 pyJianYingDraft 生成标准剪映草稿"""
-    print("Using pyJianYingDraft to generate standard draft...")
+    editing_mode = editing_mode or ""
+
+    if smart_segments:
+        print(f"Using smart editing segments: {len(smart_segments)} placements ({editing_mode})")
+    else:
+        print("Using pyJianYingDraft to generate standard draft...")
 
     # ---- 视频元数据 ----
     width = video_info.get("width", 1920)
@@ -162,12 +189,13 @@ def _create_draft_with_jyd(
     draft_name = f"MovieMatch_{task_id[:8]}"
 
     # ---- 确定草稿写入位置 ----
-    # 优先写入剪映草稿目录（如果存在），同时也在 output 保留副本
+    # 支持用户自定义导出目录，否则使用默认 OUTPUT_FOLDER
+    base_output_dir = custom_output_dir if custom_output_dir else config.OUTPUT_FOLDER
     capcut_draft_path = None
     output_draft_path = None
 
-    # 写入 output 目录（始终保留副本）
-    output_dir = os.path.join(config.OUTPUT_FOLDER, task_id)
+    # 写入输出目录（始终保留副本）
+    output_dir = os.path.join(base_output_dir, task_id)
     os.makedirs(output_dir, exist_ok=True)
 
     # 创建临时 DraftFolder 指向 output 目录来生成草稿
@@ -194,15 +222,22 @@ def _create_draft_with_jyd(
     script.add_material(audio_mat)
     script.add_track(jyd.TrackType.audio)
 
-    # ---- 按 BPM 节拍切分视频片段 ----
-    beat_segments = _compute_beat_segments(
-        video_duration_s=video_duration_s,
-        audio_duration_s=audio_duration_s,
-        bpm=bpm,
-        beats_per_cut=2,
-    )
+    # ---- 确定使用的分段方案 ----
+    if smart_segments:
+        # 使用智能编辑引擎产生的分段
+        segments = smart_segments
+        print(f"   ✂️ 使用智能分段: {len(segments)} 个放置计划")
+    else:
+        # 回退到传统的节拍等分模式
+        segments = _compute_beat_segments(
+            video_duration_s=video_duration_s,
+            audio_duration_s=audio_duration_s,
+            bpm=bpm,
+            beats_per_cut=2,
+        )
+        print(f"   🥁 使用节拍等分: {len(segments)} 个片段 (BPM={bpm})")
 
-    for seg in beat_segments:
+    for seg in segments:
         target_start_us = int(seg["target_start"] * US)
         seg_duration_us = int(seg["source_duration"] * US)
         source_start_us = int(seg["source_start"] * US)
@@ -246,7 +281,7 @@ def _create_draft_with_jyd(
             script2.add_track(jyd.TrackType.video)
             script2.add_track(jyd.TrackType.audio)
 
-            for seg in beat_segments:
+            for seg in segments:
                 target_tr = Timerange(
                     int(seg["target_start"] * US),
                     int(seg["source_duration"] * US),
@@ -270,14 +305,25 @@ def _create_draft_with_jyd(
             print(f"Copy to CapCut dir failed: {e}")
             capcut_draft_path = None
 
+    # ---- JYD return ----
+    if smart_segments:
+        mode_label = "视频优先" if editing_mode == "video_first" else "音乐优先"
+        hint = (
+            f"✨ 智能剪辑模式（{mode_label}）：视频已根据内容高光度和音乐结构自动匹配。"
+            f"共 {len(segments)} 个片段，每个片段精确放置在音乐的最佳位置。"
+            f"在剪映中可自由调整任何片段的位置和时长。"
+        )
+    else:
+        hint = (
+            "视频已按音乐节拍自动切分为多段。"
+            "若草稿已复制到剪映目录，请重启剪映后查看「我的草稿」。"
+        )
+
     return {
         "draft_folder": output_draft_path,
         "capcut_draft_path": capcut_draft_path,
         "draft_name": draft_name,
-        "editing_hint": (
-            "视频已按音乐节拍自动切分为多段。"
-            "若草稿已复制到剪映目录，请重启剪映后查看「我的草稿」。"
-        ),
+        "editing_hint": hint,
     }
 
 
@@ -291,6 +337,9 @@ def _create_draft_manual(
     video_info: dict,
     match_result: dict,
     task_id: str,
+    smart_segments: list[dict] = None,
+    editing_mode: str = None,
+    custom_output_dir: str = None,
 ) -> dict:
     """
     手动创建剪映草稿（备用方案，不依赖 pyJianYingDraft）
@@ -298,7 +347,8 @@ def _create_draft_manual(
     """
     print("Using manual draft mode (pyJianYingDraft unavailable)...")
 
-    output_dir = os.path.join(config.OUTPUT_FOLDER, task_id)
+    base_output_dir = custom_output_dir if custom_output_dir else config.OUTPUT_FOLDER
+    output_dir = os.path.join(base_output_dir, task_id)
     draft_name = f"MovieMatch_{task_id[:8]}"
     draft_dir = os.path.join(output_dir, draft_name)
     os.makedirs(draft_dir, exist_ok=True)
@@ -319,16 +369,22 @@ def _create_draft_manual(
     if fps <= 0:
         fps = 30
 
-    # 节拍同步切分
+    # 节拍同步切分（或使用智能分段）
     bpm = match_result.get("tempo_bpm", 120)
     if bpm <= 0:
         bpm = 120
-    beat_segments = _compute_beat_segments(
-        video_duration_s=video_duration_sec,
-        audio_duration_s=audio_duration_sec,
-        bpm=bpm,
-        beats_per_cut=2,
-    )
+
+    if smart_segments:
+        segments = smart_segments
+        print(f"   ✂️ 手动模式: 使用智能分段 ({len(segments)} 个)")
+    else:
+        segments = _compute_beat_segments(
+            video_duration_s=video_duration_sec,
+            audio_duration_s=audio_duration_sec,
+            bpm=bpm,
+            beats_per_cut=2,
+        )
+        print(f"   🥁 手动模式: 节拍等分 ({len(segments)} 个, BPM={bpm})")
 
     # ---- draft_meta_info.json ----
     # 使用与真实剪映草稿一致的文件名 draft_meta_info.json（不是 draft_info.json）
@@ -339,7 +395,7 @@ def _create_draft_manual(
         "draft_id": draft_id,
         "draft_name": draft_name,
         "draft_fold_path": draft_dir.replace("\\", "/"),
-        "draft_root_path": config.OUTPUT_FOLDER.replace("\\", "/"),
+        "draft_root_path": base_output_dir.replace("\\", "/"),
         "draft_cover": "draft_cover.jpg",
         "draft_is_invisible": False,
         "draft_is_ai_shorts": False,
@@ -358,7 +414,7 @@ def _create_draft_manual(
     # ---- draft_content.json ----
     # 构建 segments
     video_segments_json = []
-    for seg in beat_segments:
+    for seg in segments:
         seg_start_us = int(seg["source_start"] * US)
         seg_duration_us = int(seg["source_duration"] * US)
         target_start_us = int(seg["target_start"] * US)
@@ -777,14 +833,22 @@ def _create_draft_manual(
             print(f"Copy to CapCut dir failed: {e}")
             capcut_draft_path = None
 
-    print(f"Draft saved (manual): {draft_dir}")
+    # ---- Manual return ----
+    if smart_segments:
+        mode_label = "视频优先" if editing_mode == "video_first" else "音乐优先"
+        hint = (
+            f"✨ 智能剪辑模式（{mode_label}）：视频已根据内容高光度和音乐结构自动匹配。"
+            f"共 {len(segments)} 个片段。在剪映中可自由调整任何片段的位置和时长。"
+        )
+    else:
+        hint = (
+            "视频已按音乐节拍自动切分为多段。"
+            "若草稿已复制到剪映目录，请重启剪映后查看「我的草稿」。"
+        )
 
     return {
         "draft_folder": draft_dir,
         "capcut_draft_path": capcut_draft_path,
         "draft_name": draft_name,
-        "editing_hint": (
-            "视频已按音乐节拍自动切分为多段。"
-            "若草稿已复制到剪映目录，请重启剪映后查看「我的草稿」。"
-        ),
+        "editing_hint": hint,
     }

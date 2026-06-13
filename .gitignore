@@ -1,5 +1,8 @@
-# 保护 API Key
-config.py
+# 保护 API Key（用 .env 存储密钥，config.py 只含默认值）
+.env
+
+# 工作空间运行时数据
+workspace/runs/
 
 # Python
 __pycache__/

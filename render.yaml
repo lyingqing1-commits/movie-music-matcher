@@ -1,0 +1,32 @@
+# Render.com 部署配置
+# ===================
+# 推送到 GitHub 后，在 Render 中点击 "New + → Web Service"
+# 选择此仓库，Render 会自动读取此文件完成部署。
+
+services:
+  - type: web
+    name: movie-music-matcher
+    runtime: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: FLASK_HOST
+        value: 0.0.0.0
+      - key: FLASK_PORT
+        value: "10000"
+      - key: FLASK_DEBUG
+        value: "false"
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: ANTHROPIC_BASE_URL
+        value: https://api.deepseek.com/anthropic
+      - key: AI_MODEL
+        value: deepseek-chat
+      - key: HUGGINGFACE_API_TOKEN
+        sync: false
+    disk:
+      name: uploads
+      mountPath: /app/uploads
+      sizeGB: 1
+    autoDeploy: true
