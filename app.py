@@ -862,10 +862,56 @@ def api_tutorial():
 
 @app.route("/api/default-export-path")
 def api_default_export_path():
-    """返回默认导出路径，供前端初始化"""
+    """返回默认导出路径和系统常用路径，供前端初始化"""
+    import platform as _platform
+    home = os.path.expanduser("~")
+    system = _platform.system()
+
+    # 根据操作系统构建常用路径
+    common_paths = [config.OUTPUT_FOLDER]
+    if system == "Windows":
+        common_paths += [
+            os.path.join(home, "Desktop"),
+            os.path.join(home, "Documents"),
+            os.path.join(home, "Downloads"),
+            os.path.join(home, "Videos"),
+            os.path.join(home, "Movies"),
+        ]
+    elif system == "Darwin":  # macOS
+        common_paths += [
+            os.path.join(home, "Desktop"),
+            os.path.join(home, "Documents"),
+            os.path.join(home, "Downloads"),
+            os.path.join(home, "Movies"),
+            os.path.join(home, "Music"),
+        ]
+    else:  # Linux
+        common_paths += [
+            os.path.join(home, "Desktop"),
+            os.path.join(home, "Documents"),
+            os.path.join(home, "Downloads"),
+            os.path.join(home, "Videos"),
+        ]
+
+    # 去重且只保留存在的路径
+    seen = set()
+    available = []
+    for p in common_paths:
+        p = os.path.normpath(p)
+        if p not in seen:
+            seen.add(p)
+            available.append({
+                "path": p,
+                "label": os.path.basename(p),
+                "exists": os.path.isdir(p),
+            })
+
     return jsonify({
         "default_path": config.OUTPUT_FOLDER,
         "capcut_draft_dir": config.CAPCUT_DRAFT_DIR,
+        "system": system,
+        "home": home,
+        "common_paths": available,
     })
 
 

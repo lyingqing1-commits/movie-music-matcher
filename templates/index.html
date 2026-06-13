@@ -217,10 +217,12 @@
                 <div class="export-path-input-row">
                     <input type="text" id="exportPathInput" class="export-path-input"
                            placeholder="留空则使用默认路径">
+                    <button type="button" id="pickExportPathBtn" class="btn-pick-path" title="浏览文件夹...">📂</button>
                     <button type="button" id="resetExportPathBtn" class="btn-reset-path" title="恢复默认">↺</button>
                 </div>
+                <div class="export-path-suggestions" id="exportPathSuggestions" style="display:none;"></div>
                 <p class="export-path-desc">
-                    💡 设置草稿文件的保存位置。留空则自动保存到默认 output 目录。
+                    💡 点击 📂 浏览选择文件夹，或手动输入路径。留空则自动保存到默认 output 目录。
                 </p>
             </div>
         </div>
@@ -384,9 +386,11 @@
                     <div class="export-path-body" id="v3ExportPathBody" style="display:none;">
                         <div class="export-path-input-row">
                             <input type="text" id="v3ExportPathInput" class="export-path-input" placeholder="留空使用默认">
+                            <button type="button" id="v3PickExportPathBtn" class="btn-pick-path" title="浏览文件夹...">📂</button>
                             <button type="button" id="v3ResetExportPathBtn" class="btn-reset-path" title="恢复默认">↺</button>
                         </div>
-                        <p class="export-path-desc">💡 设置草稿保存位置。留空则自动保存到 output 目录。</p>
+                        <div class="export-path-suggestions" id="v3ExportPathSuggestions" style="display:none;"></div>
+                        <p class="export-path-desc">💡 点击 📂 浏览选择文件夹，或手动输入路径。留空则自动保存到 output 目录。</p>
                     </div>
                 </div>
             </div>

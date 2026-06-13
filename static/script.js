@@ -78,19 +78,140 @@ const exportPathArrow = document.getElementById("exportPathArrow");
 const exportPathInput = document.getElementById("exportPathInput");
 const exportPathHint = document.getElementById("exportPathHint");
 const resetExportPathBtn = document.getElementById("resetExportPathBtn");
+const pickExportPathBtn = document.getElementById("pickExportPathBtn");
+const exportPathSuggestions = document.getElementById("exportPathSuggestions");
+
+let commonPaths = [];
+let defaultPath = "";
 
 // 从后端加载默认导出路径
 async function loadDefaultExportPath() {
     try {
         const resp = await fetch("/api/default-export-path");
         const data = await resp.json();
-        exportPathInput.placeholder = data.default_path || "";
-        exportPathHint.textContent = "默认: " + (data.default_path || "");
+        defaultPath = data.default_path || "";
+        commonPaths = data.common_paths || [];
+        exportPathInput.placeholder = defaultPath;
+        exportPathHint.textContent = "默认: " + defaultPath;
+        // 构建路径建议列表
+        buildExportPathSuggestions(commonPaths, exportPathSuggestions, exportPathInput);
     } catch (err) {
         console.warn("加载默认导出路径失败:", err.message);
     }
 }
 loadDefaultExportPath();
+
+// 构建路径建议列表
+function buildExportPathSuggestions(paths, container, inputEl) {
+    if (!paths.length) {
+        container.style.display = "none";
+        return;
+    }
+    let html = '<div class="path-suggestions-title">📂 常用路径（点击选择）：</div>';
+    paths.forEach(p => {
+        const icon = p.exists ? "📁" : "📁";
+        html += `<div class="path-suggestion-item" data-path="${escapeHtml(p.path)}" title="${escapeHtml(p.path)}">
+            <span>${icon}</span>
+            <span>${escapeHtml(p.label)}</span>
+            <span class="path-suggestion-detail">${escapeHtml(p.path)}</span>
+        </div>`;
+    });
+    container.innerHTML = html;
+    container.style.display = "block";
+
+    // 点击建议路径
+    container.querySelectorAll(".path-suggestion-item").forEach(item => {
+        item.addEventListener("click", (e) => {
+            e.stopPropagation();
+            const path = item.dataset.path;
+            inputEl.value = path;
+            if (inputEl === exportPathInput) {
+                customExportPath = path;
+            } else {
+                v3CustomExportPath = path;
+            }
+        });
+    });
+}
+
+function escapeHtml(str) {
+    const div = document.createElement("div");
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+// 文件夹浏览（使用 File System Access API）
+async function pickFolder(inputEl, suggestionsEl) {
+    // 检查浏览器是否支持
+    if (window.showDirectoryPicker) {
+        try {
+            const dirHandle = await window.showDirectoryPicker({
+                mode: "readwrite",
+                startIn: "desktop",
+            });
+            inputEl.value = dirHandle.name;
+            // 尝试获取完整路径（部分浏览器支持）
+            try {
+                const root = await navigator.storage.getDirectory();
+                // resolve 可能返回路径信息
+                const info = await root.resolve(dirHandle);
+            } catch (_) {}
+            // 如果浏览器支持 getFileHandle 的路径解析
+            if (dirHandle.name) {
+                // 更新为系统路径格式
+                const resolved = await resolveDirectoryPath(dirHandle);
+                if (resolved) {
+                    inputEl.value = resolved;
+                }
+            }
+            if (inputEl === exportPathInput) {
+                customExportPath = inputEl.value;
+            } else {
+                v3CustomExportPath = inputEl.value;
+            }
+            return;
+        } catch (err) {
+            if (err.name === "AbortError") return; // 用户取消
+            console.warn("Folder picker failed:", err.message);
+        }
+    }
+    // 回退：显示路径建议
+    if (suggestionsEl.style.display === "none") {
+        suggestionsEl.style.display = "block";
+    } else {
+        suggestionsEl.style.display = "none";
+    }
+}
+
+// 尝试解析目录完整路径
+async function resolveDirectoryPath(dirHandle) {
+    try {
+        // Chrome/Edge 中，可以通过 requestPermission + 特定方法获取
+        // 但 File System Access API 不直接暴露完整路径（出于安全考虑）
+        // 返回名称供用户参考
+        const name = dirHandle.name;
+        // 尝试匹配常见路径模式
+        for (const p of commonPaths) {
+            if (p.label === name || p.path.endsWith(name)) {
+                return p.path;
+            }
+        }
+        // 如果选择了桌面等，尝试匹配
+        const homeGuess = defaultPath ? defaultPath.split("\\").slice(0, -2).join("\\") : "";
+        if (homeGuess) {
+            return homeGuess + "\\" + name;
+        }
+        return name; // 仅返回文件夹名
+    } catch (_) {
+        return dirHandle.name;
+    }
+}
+
+// 文件夹选择按钮
+pickExportPathBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    pickFolder(exportPathInput, exportPathSuggestions);
+});
 
 // 折叠/展开导出路径设置
 exportPathToggle.addEventListener("click", () => {
@@ -797,6 +918,13 @@ function initV3Mode() {
             arrow.textContent = "▼";
         }
     });
+    document.getElementById("v3PickExportPathBtn").addEventListener("click", (e) => {
+        e.stopPropagation();
+        pickFolder(
+            document.getElementById("v3ExportPathInput"),
+            document.getElementById("v3ExportPathSuggestions")
+        );
+    });
     document.getElementById("v3ResetExportPathBtn").addEventListener("click", (e) => {
         e.stopPropagation();
         document.getElementById("v3ExportPathInput").value = "";
@@ -818,6 +946,13 @@ async function loadV3ExportPath() {
         const data = await resp.json();
         document.getElementById("v3ExportPathInput").placeholder = data.default_path || "";
         document.getElementById("v3ExportPathHint").textContent = "默认: " + (data.default_path || "");
+        // 构建 v3 路径建议
+        const v3Paths = data.common_paths || [];
+        buildExportPathSuggestions(
+            v3Paths,
+            document.getElementById("v3ExportPathSuggestions"),
+            document.getElementById("v3ExportPathInput")
+        );
     } catch (err) {
         console.warn("加载默认导出路径失败:", err.message);
     }

@@ -1444,6 +1444,82 @@ input:checked + .slider:before {
     background: var(--surface-hover);
 }
 
+/* 文件夹浏览按钮 */
+.btn-pick-path {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    width: 38px;
+    height: 38px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 1.1rem;
+    transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.btn-pick-path:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(108, 99, 255, 0.08);
+}
+
+/* 路径建议列表 */
+.export-path-suggestions {
+    margin-top: 8px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--surface);
+    overflow: hidden;
+    max-height: 220px;
+    overflow-y: auto;
+}
+
+.path-suggestions-title {
+    padding: 8px 12px;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+    background: var(--surface-hover);
+}
+
+.path-suggestion-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    cursor: pointer;
+    font-size: 0.82rem;
+    transition: background 0.15s;
+    border-bottom: 1px solid var(--border);
+}
+
+.path-suggestion-item:last-child {
+    border-bottom: none;
+}
+
+.path-suggestion-item:hover {
+    background: rgba(108, 99, 255, 0.06);
+}
+
+.path-suggestion-item span:first-child {
+    flex-shrink: 0;
+    font-size: 1rem;
+}
+
+.path-suggestion-detail {
+    color: var(--text-secondary);
+    font-size: 0.7rem;
+    margin-left: auto;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 60%;
+}
+
 .export-path-desc {
     font-size: 0.78rem;
     color: #666;
