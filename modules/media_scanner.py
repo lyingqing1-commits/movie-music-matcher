@@ -24,8 +24,8 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp", ".tif", ".tiff", ".bmp", "
 def quick_hash(file_path: str) -> str:
     """
     快速文件哈希（用于去重检测）。
-    哈希文件头 1MB + 尾 1MB + 文件大小。
-    复用 movie_identifier._compute_video_fingerprint() 的模式。
+    哈希文件头 64KB + 文件大小。
+    优化：减小读取量以提升扫描速度。
     """
     path = Path(file_path)
     if not path.exists():
@@ -36,12 +36,12 @@ def quick_hash(file_path: str) -> str:
 
     try:
         with path.open("rb") as handle:
-            # 读头部 1MB
-            digest.update(handle.read(1024 * 1024))
-            # 读尾部 1MB（如果文件 > 1MB）
-            if size > 1024 * 1024:
-                handle.seek(max(0, size - 1024 * 1024))
-                digest.update(handle.read(1024 * 1024))
+            # 读头部 64KB（原 1MB 太慢，对大文件影响显著）
+            digest.update(handle.read(64 * 1024))
+            # 读尾部 64KB（如果文件足够大）
+            if size > 128 * 1024:
+                handle.seek(max(0, size - 64 * 1024))
+                digest.update(handle.read(64 * 1024))
         digest.update(str(size).encode("ascii"))
         return digest.hexdigest()
     except Exception:
@@ -86,11 +86,15 @@ def scan_media(video_path: str, audio_paths: list[str] = None, run_path: str = N
         suffix = vp.suffix.lower()
         media_type = "video" if suffix in VIDEO_EXTENSIONS else "audio" if suffix in AUDIO_EXTENSIONS else "image"
 
+        print(f"   [SCAN] 正在探测视频: {vp.name} ({round(vp.stat().st_size/(1024*1024),1)}MB)...")
         video_meta = {}
         try:
             video_meta = get_video_info(video_path)
+            print(f"   [SCAN] 视频时长: {video_meta.get('duration', '?')}s, "
+                  f"分辨率: {video_meta.get('width','?')}x{video_meta.get('height','?')}")
         except Exception as e:
             video_meta = {"error": str(e)}
+            print(f"   [WARN] 视频探测失败: {e}")
 
         file_entry = {
             "path": str(vp.resolve()),
@@ -113,17 +117,19 @@ def scan_media(video_path: str, audio_paths: list[str] = None, run_path: str = N
 
     # 扫描音频
     if audio_paths:
-        for audio_path in audio_paths:
+        for i, audio_path in enumerate(audio_paths):
             if not audio_path or not os.path.exists(audio_path):
                 continue
             ap = Path(audio_path)
             suffix = ap.suffix.lower()
 
+            print(f"   [SCAN] 正在探测音频 ({i+1}/{len(audio_paths)}): {ap.name} ({round(ap.stat().st_size/(1024*1024),1)}MB)...")
             audio_meta = {}
             try:
                 audio_meta = get_video_info(audio_path)  # ffprobe 对音频也适用
             except Exception as e:
                 audio_meta = {"error": str(e)}
+                print(f"   [WARN] 音频探测失败: {e}")
 
             file_entry = {
                 "path": str(ap.resolve()),

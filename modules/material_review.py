@@ -27,26 +27,12 @@ def review_material(
     """
     执行素材审查：电影识别 + 视频风格分析 → evidence-based taxonomy。
 
-    参数：
-        frame_files: 所有已提取的帧文件路径列表
-        video_info: 视频元数据（来自 extract_frames）
-        run_path: 运行目录路径
-        movie_identity_cache: 之前缓存的电影识别结果（可选）
-        editing_mode: 剪辑模式（video_first | music_first）
-
-    返回：
-        material-review 字典：
-        {
-            schema_version, reviewed_at,
-            identified_movie: {...},
-            taxonomy: {scene, people, action, dialogue, emotion, quality, continuity,
-                       source_group, narrative_use, visible_text},
-            style_analysis: {...},
-            evidence_frames: [...],
-        }
+    即使 AI 调用失败也能产生有效的审查结果（回退到启发式分类）。
     """
-    # 采样帧用于分析
-    sampled = sample_frames(frame_files)
+    # 采样帧用于分析（允许空列表）
+    sampled = sample_frames(frame_files) if frame_files else []
+    if not sampled and frame_files:
+        sampled = frame_files[:10]  # 直接取前10帧作为fallback
 
     # ---- 电影识别 ----
     movie_identity = movie_identity_cache
@@ -54,19 +40,21 @@ def review_material(
         try:
             movie_identity = identify_movie(sampled)
         except Exception as e:
-            print(f"   [WARN] 电影识别失败: {e}")
+            print(f"   [WARN] 电影识别失败: {e}，使用启发式分类")
             movie_identity = {"identified": False}
 
     # ---- 风格分析 ----
-    try:
-        style_result = analyze_style(sampled, movie_identity)
-    except Exception as e:
-        print(f"   [WARN] 风格分析失败: {e}")
-        style_result = {
-            "genre": "unknown", "mood": "unknown",
-            "color_palette": "unknown", "pacing": "unknown",
-            "themes": [], "visual_style": "unknown",
-        }
+    style_result = None
+    if sampled:
+        try:
+            style_result = analyze_style(sampled, movie_identity)
+        except Exception as e:
+            print(f"   [WARN] 风格分析失败: {e}")
+
+    if not style_result or style_result.get("parse_error"):
+        # 从视频元数据推断基本风格
+        style_result = _heuristic_style(video_info)
+        print(f"   使用启发式风格推断: genre={style_result.get('genre')}, mood={style_result.get('mood')}")
 
     # ---- 构建 evidence-based taxonomy ----
     taxonomy = _build_taxonomy(movie_identity, style_result, video_info)
@@ -75,15 +63,15 @@ def review_material(
     review = {
         "schema_version": "1.0.0",
         "reviewed_at": datetime.now(timezone.utc).isoformat(),
-        "identified_movie": movie_identity,
+        "identified_movie": movie_identity or {"identified": False},
         "taxonomy": taxonomy,
         "style_analysis": style_result,
-        "evidence_frames": sampled[:10],  # 引用前 10 帧
+        "evidence_frames": sampled[:10] if sampled else [],
         "video_info": {
-            "duration": video_info.get("duration", 0),
-            "width": video_info.get("width", 0),
-            "height": video_info.get("height", 0),
-            "fps": video_info.get("fps", 0),
+            "duration": video_info.get("duration", 0) if video_info else 0,
+            "width": video_info.get("width", 0) if video_info else 0,
+            "height": video_info.get("height", 0) if video_info else 0,
+            "fps": video_info.get("fps", 30) if video_info else 30,
         },
     }
 
@@ -92,6 +80,52 @@ def review_material(
         save_artifact(run_path, "material-review", review)
 
     return review
+
+
+def _heuristic_style(video_info: dict) -> dict:
+    """从视频元数据推断基本风格（无需AI）"""
+    duration = video_info.get("duration", 60) if video_info else 60
+    fps = video_info.get("fps", 30) if video_info else 30
+    width = video_info.get("width", 1920) if video_info else 1920
+
+    # 基于分辨率推断
+    if width >= 3840:
+        visual = "4K 高清"
+        quality = "high"
+    elif width >= 1920:
+        visual = "1080p 标准"
+        quality = "medium"
+    else:
+        visual = "标清"
+        quality = "low"
+
+    # 基于时长推断
+    if duration > 600:
+        pacing = "slow"
+        genre_hint = "长篇"
+    elif duration > 120:
+        pacing = "medium"
+        genre_hint = "中篇"
+    else:
+        pacing = "fast"
+        genre_hint = "短片"
+
+    return {
+        "genre": genre_hint,
+        "mood": "neutral",
+        "color_palette": "standard",
+        "pacing": pacing,
+        "themes": ["visual", "narrative"],
+        "visual_style": visual,
+        "recommended_music": {
+            "genre": "cinematic",
+            "tempo_bpm": 120,
+            "instruments": ["piano", "strings"],
+            "mood_match": "neutral",
+            "lyrics_theme": "visual storytelling",
+        },
+        "analysis_mode": "heuristic",
+    }
 
 
 def _build_taxonomy(movie_identity: dict, style_result: dict, video_info: dict) -> dict:
@@ -111,15 +145,15 @@ def _build_taxonomy(movie_identity: dict, style_result: dict, video_info: dict) 
     10. visible_text — 可见文字（标题、字幕）
     """
 
-    # 从电影知识中提取
-    knowledge = movie_identity.get("ai_knowledge", {}) if movie_identity else {}
-    key_scenes = knowledge.get("key_scenes", [])
-    themes = style_result.get("themes", [])
-    mood = style_result.get("mood", "unknown")
-    genre = style_result.get("genre", "unknown")
-    pacing = style_result.get("pacing", "unknown")
-    visual_style = style_result.get("visual_style", "unknown")
-    color = style_result.get("color_palette", "unknown")
+    # 从电影知识中提取（防御 None 值）
+    knowledge = (movie_identity or {}).get("ai_knowledge", {}) or {}
+    key_scenes = knowledge.get("key_scenes", []) if isinstance(knowledge, dict) else []
+    themes = (style_result or {}).get("themes", [])
+    mood = (style_result or {}).get("mood", "unknown")
+    genre = (style_result or {}).get("genre", "unknown")
+    pacing = (style_result or {}).get("pacing", "unknown")
+    visual_style = (style_result or {}).get("visual_style", "unknown")
+    color = (style_result or {}).get("color_palette", "unknown")
 
     # 场景
     scene_info = _classify_scene(genre, knowledge, key_scenes)
@@ -183,7 +217,9 @@ def _classify_scene(genre: str, knowledge: dict, key_scenes: list) -> dict:
     primary = "未知"
     locations = []
 
-    # 从电影知识提取
+    # 从电影知识提取（防御 None）
+    if not isinstance(knowledge, dict):
+        knowledge = {}
     plot = knowledge.get("plot_summary", "")
     visual = knowledge.get("visual_signature", "")
 

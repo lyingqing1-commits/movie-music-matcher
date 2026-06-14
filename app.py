@@ -943,28 +943,43 @@ def _abort_if_error(task_id: str) -> bool:
 
 
 def run_media_scan(task_id: str):
-    """v3 阶段 2：媒体扫描"""
+    """v3 阶段 2：媒体扫描 + 帧提取（为后续阶段准备帧数据）"""
     task = _get_task_safe(task_id)
     if not task:
         return
 
     try:
+        video_path = task.get("video_path", "")
+        audio_paths = task.get("audio_paths", [])
+        run_path = task.get("run_path", "")
+
+        # Step A: 扫描媒体文件
         task["status"] = "scanning"
         task["phase"] = "media_scan"
         task["progress"] = 10
         task["message"] = "正在扫描媒体文件..."
 
-        video_path = task.get("video_path", "")
-        audio_paths = task.get("audio_paths", [])
-        run_path = task.get("run_path", "")
-
         manifest = scan_media(video_path, audio_paths, run_path)
         task["manifest"] = manifest
         task["scan_preview"] = build_scan_preview(manifest)
+        task["progress"] = 20
 
-        task["progress"] = 25
+        # Step B: 提取视频帧（为素材审查做准备）
+        if video_path and os.path.exists(video_path):
+            task["message"] = "正在提取视频帧..."
+            try:
+                from modules.frame_extractor import extract_frames as _extract
+                frame_files, video_info = _extract(video_path, task_id)
+                task["frame_files"] = frame_files
+                task["video_info"] = video_info
+                task["progress"] = 25
+            except Exception as e:
+                print(f"   [WARN] 帧提取失败（不影响扫描完成）: {e}")
+                task.setdefault("video_info", {})
+                task.setdefault("frame_files", [])
+
         task["status"] = "scan_complete"
-        task["message"] = "✅ 媒体扫描完成，请确认素材审查"
+        task["message"] = "✅ 媒体扫描完成（含帧提取），请确认素材审查"
 
     except Exception as e:
         task["status"] = "error"
@@ -975,7 +990,7 @@ def run_media_scan(task_id: str):
 
 
 def run_material_review(task_id: str):
-    """v3 阶段 3：素材审查"""
+    """v3 阶段 3：素材审查（使用扫描阶段已提取的帧，无需重复提取）"""
     task = _get_task_safe(task_id)
     if not task:
         return
@@ -984,32 +999,29 @@ def run_material_review(task_id: str):
         task["status"] = "reviewing"
         task["phase"] = "material_review"
         task["progress"] = 30
-        task["message"] = "🤖 AI 正在审查素材..."
+        task["message"] = "AI 正在审查素材..."
 
         video_path = task.get("video_path", "")
         run_path = task.get("run_path", "")
         frame_files = task.get("frame_files", [])
-
-        # 确保帧已提取
-        if not frame_files and video_path:
-            from modules.frame_extractor import extract_frames, sample_frames
-            frame_files, video_info = extract_frames(video_path, task_id)
-            task["frame_files"] = frame_files
-            task["video_info"] = video_info
-
-        # 提取视频信息
         video_info = task.get("video_info", {})
-        if not video_info and video_path:
-            from modules.frame_extractor import get_video_info
-            video_info = get_video_info(video_path)
-            task["video_info"] = video_info
-
         editing_mode = task.get("editing_mode", "video_first")
 
-        # 执行素材审查
+        # 如果扫描阶段未提取帧（极少情况），在此补提
+        if not frame_files and video_path:
+            print("   [INFO] 扫描阶段未提取帧，在此补提...")
+            try:
+                from modules.frame_extractor import extract_frames as _extract
+                frame_files, video_info = _extract(video_path, task_id)
+                task["frame_files"] = frame_files
+                task["video_info"] = video_info
+            except Exception as e:
+                print(f"   [WARN] 补提帧失败: {e}")
+
+        # 执行素材审查（即使帧为空也能产生启发式结果）
         review = review_material(
             frame_files=frame_files or [],
-            video_info=video_info,
+            video_info=video_info or {},
             run_path=run_path,
             editing_mode=editing_mode,
         )
@@ -1021,15 +1033,13 @@ def run_material_review(task_id: str):
         task["message"] = "✅ 素材审查完成，请确认后继续"
 
     except Exception as e:
-        task["status"] = "error"
-        task["message"] = f"❌ 素材审查失败: {str(e)}"
-        import traceback
-        task["error_detail"] = traceback.format_exc()
-        print(f"[ERROR] Material review failed for {task_id}:\n{task['error_detail']}")
+        task["status"] = "scan_complete"  # 回退到扫描完成状态，允许重试
+        task["message"] = f"⚠️ 素材审查失败（可重试）: {str(e)[:100]}"
+        print(f"[WARN] Material review failed for {task_id}: {e}")
 
 
 def run_story(task_id: str):
-    """v3 阶段 4：故事开发"""
+    """v3 阶段 4：故事开发（允许空 review 数据，使用模板回退）"""
     task = _get_task_safe(task_id)
     if not task:
         return
@@ -1038,11 +1048,19 @@ def run_story(task_id: str):
         task["status"] = "developing_story"
         task["phase"] = "story"
         task["progress"] = 50
-        task["message"] = "📝 AI 正在开发叙事结构..."
+        task["message"] = "AI 正在开发叙事结构..."
 
         review = task.get("review", {})
         brief = task.get("brief", {})
         run_path = task.get("run_path", "")
+
+        # 确保 review 有最小结构
+        if not review:
+            review = {
+                "style_analysis": {"genre": "短片", "mood": "neutral", "themes": []},
+                "taxonomy": {"emotion": {"emotional_arc": ""}, "action": {"action_intensity": "medium"}},
+                "identified_movie": {"identified": False},
+            }
 
         script = develop_story(review, brief, run_path)
         task["story"] = script
@@ -1053,15 +1071,13 @@ def run_story(task_id: str):
         task["message"] = "✅ 故事开发完成，请确认后继续（可跳过）"
 
     except Exception as e:
-        task["status"] = "error"
-        task["message"] = f"❌ 故事开发失败: {str(e)}"
-        import traceback
-        task["error_detail"] = traceback.format_exc()
-        print(f"[ERROR] Story development failed for {task_id}:\n{task['error_detail']}")
+        task["status"] = "review_complete"  # 回退，允许跳过
+        task["message"] = f"⚠️ 故事开发失败（可跳过）: {str(e)[:100]}"
+        print(f"[WARN] Story development failed for {task_id}: {e}")
 
 
 def run_blueprint(task_id: str):
-    """v3 阶段 5：剪辑蓝图生成"""
+    """v3 阶段 5：剪辑蓝图生成（允许部分数据缺失，产生可用蓝图）"""
     task = _get_task_safe(task_id)
     if not task:
         return
@@ -1070,7 +1086,7 @@ def run_blueprint(task_id: str):
         task["status"] = "generating_blueprint"
         task["phase"] = "blueprint"
         task["progress"] = 65
-        task["message"] = "✂️ 正在生成剪辑蓝图..."
+        task["message"] = "正在生成剪辑蓝图..."
 
         video_path = task.get("video_path", "")
         audio_paths = task.get("audio_paths", [])
@@ -1081,6 +1097,14 @@ def run_blueprint(task_id: str):
         video_info = task.get("video_info", {})
         editing_mode = task.get("editing_mode", "video_first")
         music_structure = task.get("music_structure")
+
+        # 确保 review 有最小结构
+        if not review:
+            review = {
+                "style_analysis": {"genre": "短片", "mood": "neutral", "themes": []},
+                "taxonomy": {"emotion": {"emotional_arc": ""}, "action": {"action_intensity": "medium"}},
+                "video_info": video_info or {"duration": 60, "fps": 30, "width": 1920, "height": 1080},
+            }
 
         # 音频分析（如果没有预先分析）
         audio_features = None
@@ -1467,8 +1491,8 @@ def api_pipeline_skip(task_id: str):
     data = request.get_json() or {}
     current_phase = data.get("phase", task.get("phase", ""))
 
-    # 只有故事阶段可以跳过
-    if current_phase != "story":
+    # 故事和素材审查阶段可以跳过
+    if current_phase not in ("story", "material_review"):
         return jsonify({"error": f"阶段 '{current_phase}' 不可跳过"}), 400
 
     next_phase = _get_next_phase(current_phase)

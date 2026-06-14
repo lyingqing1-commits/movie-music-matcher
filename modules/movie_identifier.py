@@ -196,13 +196,13 @@ def _parse_identification(text: str) -> dict:
 
 
 def _unidentified(reason: str = "") -> dict:
-    """构建"未识别"响应"""
+    """构建"未识别"响应（ai_knowledge 为空字典而非 None，避免下游 NoneType 错误）"""
     return {
         "identified": False,
         "movie_name": None,
         "year": None,
         "confidence": None,
-        "ai_knowledge": None,
+        "ai_knowledge": {},  # 空字典，安全传递给下游
         "reason": reason,
     }
 
