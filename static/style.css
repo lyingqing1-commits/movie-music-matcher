@@ -1278,6 +1278,56 @@ input:checked + .slider:before {
     white-space: nowrap;
 }
 
+/* ---- v3 管道进度条 ---- */
+.pipeline-progress-section {
+    max-width: 520px;
+    margin: 0 auto 24px;
+    padding: 0 12px;
+}
+
+.pipeline-progress-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.pipeline-phase-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.pipeline-phase-percent {
+    font-size: 0.85rem;
+    font-weight: 700;
+    color: var(--primary);
+}
+
+.pipeline-progress-bar {
+    height: 6px;
+    border-radius: 3px;
+    transition: width 0.4s ease;
+}
+
+/* 运行时脉冲动画 */
+.pipeline-progress-bar.pipeline-running {
+    animation: progressPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes progressPulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.pipeline-status-text {
+    margin-top: 8px;
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    text-align: center;
+    min-height: 1.2em;
+}
+
 /* ---- v3 确认面板 ---- */
 .approval-panel {
     background: var(--surface);

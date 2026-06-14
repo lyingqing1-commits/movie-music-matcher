@@ -1081,9 +1081,10 @@ async function startV3Pipeline() {
     }
     v3AudioFiles.forEach(f => formData.append("audio", f));
 
-    // 隐藏上传区，显示管道步骤
+    // 隐藏上传区，显示管道步骤+进度条
     document.getElementById("v3UploadBtnBar").style.display = "none";
     document.getElementById("pipelineSteps").style.display = "flex";
+    document.getElementById("pipelineProgressSection").style.display = "block";
     document.getElementById("v3UploadSection").style.display = "none";
     document.getElementById("v3EditingSection").style.display = "none";
 
@@ -1098,14 +1099,17 @@ async function startV3Pipeline() {
         v3TaskId = data.task_id;
         v3CurrentPhase = data.phase || "media_scan";
         updatePipelineStep(v3CurrentPhase, "active");
+        updatePipelineProgress(v3CurrentPhase, 0, "上传完成，开始处理...");
         await pollV3Pipeline();
     } catch (err) {
         alert("管道启动失败: " + err.message);
+        // 恢复UI
+        document.getElementById("pipelineProgressSection").style.display = "none";
+        document.getElementById("pipelineSteps").style.display = "none";
     }
 }
 
-// ---- v3 管道轮询 ----
-// 跟踪当前等待的阶段完成状态，避免竞态条件
+// ---- v3 管道轮询（带进度条） ----
 let pollingForPhase = null;
 
 async function pollV3Pipeline() {
@@ -1123,42 +1127,39 @@ async function pollV3Pipeline() {
 
             const status = data.status || "";
             const phase = data.phase || v3CurrentPhase;
+            const progress = data.progress || 0;
+            const message = data.message || "";
 
-            // 更新阶段显示
+            // 更新阶段显示和进度条
             v3CurrentPhase = phase;
             updatePipelineStep(phase, "active");
+            updatePipelineProgress(phase, progress, message);
 
             // 检查最终完成
             if (status === "completed") {
+                updatePipelineProgress("build", 100, "全部完成！");
                 markAllPipelineStepsDone();
+                document.getElementById("pipelineProgressSection").style.display = "none";
                 showV3Results(data);
                 return;
             }
 
             // 检查是否到达阶段完成状态（等待确认）
-            // 关键：只接受 _complete 且状态已改变（排除竞态）
             if (status.endsWith("_complete") && status !== lastStatus) {
-                // 额外确认：状态对应的阶段与当前阶段一致
-                const expectedComplete = phase + "_complete";
-                if (status === expectedComplete || status !== lastStatus) {
-                    updatePipelineStep(phase, "completed");
-                    showApprovalPanel(phase, data);
-                    return;
-                }
+                updatePipelineStep(phase, "completed");
+                updatePipelineProgress(phase, 100, message || "阶段完成，等待确认");
+                showApprovalPanel(phase, data);
+                return;
             }
 
             if (status === "error") {
-                throw new Error(data.message || "管道处理出错");
+                updatePipelineProgress(phase, 0, "错误: " + message.substring(0, 60));
+                throw new Error(message || "管道处理出错");
             }
 
             lastStatus = status;
-
-            // 更新进度信息
-            if (data.message) {
-                updatePipelineStep(phase, "active");
-            }
         } catch (err) {
-            if (err.message && (err.message.includes("❌") || err.message.includes("失败"))) {
+            if (err.message && (err.message.includes("❌") || err.message.includes("失败") || err.message.includes("出错"))) {
                 alert("管道处理出错: " + err.message);
                 return;
             }
@@ -1315,7 +1316,16 @@ async function skipPhase() {
     }
 }
 
-// ---- v3 管道步骤可视化 ----
+// ---- v3 管道步骤可视化 + 进度条 ----
+const phaseDisplayNames = {
+    "media_scan": "媒体扫描",
+    "material_review": "素材审查",
+    "story": "故事开发",
+    "blueprint": "剪辑蓝图",
+    "validate": "蓝图验证",
+    "build": "构建+审计",
+};
+
 function updatePipelineStep(phase, status) {
     const phaseMap = {
         "media_scan": 0, "material_review": 1, "story": 2,
@@ -1329,6 +1339,33 @@ function updatePipelineStep(phase, status) {
         if (idx === activeIdx && status === "active") step.classList.add("active");
         if (idx === activeIdx && status === "completed") step.classList.add("completed");
     });
+
+    // 更新进度条上的阶段名称
+    document.getElementById("pipelinePhaseName").textContent =
+        phaseDisplayNames[phase] || phase;
+}
+
+function updatePipelineProgress(phase, progress, message) {
+    // 更新进度百分比
+    const bar = document.getElementById("pipelineProgressBar");
+    const pct = document.getElementById("pipelinePhasePercent");
+    const statusText = document.getElementById("pipelineStatusText");
+
+    bar.style.width = Math.min(100, Math.max(0, progress)) + "%";
+    pct.textContent = Math.round(progress) + "%";
+    if (message) {
+        statusText.textContent = message;
+    }
+    // 更新阶段名
+    document.getElementById("pipelinePhaseName").textContent =
+        phaseDisplayNames[phase] || phase;
+
+    // 运行时脉冲动画
+    if (progress > 0 && progress < 100) {
+        bar.classList.add("pipeline-running");
+    } else {
+        bar.classList.remove("pipeline-running");
+    }
 }
 
 function markAllPipelineStepsDone() {

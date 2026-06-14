@@ -956,30 +956,32 @@ def run_media_scan(task_id: str):
         # Step A: 扫描媒体文件
         task["status"] = "scanning"
         task["phase"] = "media_scan"
-        task["progress"] = 10
+        task["progress"] = 2
         task["message"] = "正在扫描媒体文件..."
 
         manifest = scan_media(video_path, audio_paths, run_path)
         task["manifest"] = manifest
         task["scan_preview"] = build_scan_preview(manifest)
-        task["progress"] = 20
+        task["progress"] = 8
 
         # Step B: 提取视频帧（为素材审查做准备）
         if video_path and os.path.exists(video_path):
             task["message"] = "正在提取视频帧..."
+            task["progress"] = 10
             try:
                 from modules.frame_extractor import extract_frames as _extract
                 frame_files, video_info = _extract(video_path, task_id)
                 task["frame_files"] = frame_files
                 task["video_info"] = video_info
-                task["progress"] = 25
+                task["progress"] = 15
             except Exception as e:
                 print(f"   [WARN] 帧提取失败（不影响扫描完成）: {e}")
                 task.setdefault("video_info", {})
                 task.setdefault("frame_files", [])
 
         task["status"] = "scan_complete"
-        task["message"] = "✅ 媒体扫描完成（含帧提取），请确认素材审查"
+        task["progress"] = 15
+        task["message"] = "媒体扫描完成（含帧提取），请确认素材审查"
 
     except Exception as e:
         task["status"] = "error"
@@ -998,8 +1000,8 @@ def run_material_review(task_id: str):
     try:
         task["status"] = "reviewing"
         task["phase"] = "material_review"
-        task["progress"] = 30
-        task["message"] = "AI 正在审查素材..."
+        task["progress"] = 18
+        task["message"] = "AI 正在审查素材（风格分析+分类）..."
 
         video_path = task.get("video_path", "")
         run_path = task.get("run_path", "")
@@ -1028,9 +1030,9 @@ def run_material_review(task_id: str):
         task["review"] = review
         task["review_display"] = taxonomy_to_display(review)
 
-        task["progress"] = 45
+        task["progress"] = 30
         task["status"] = "review_complete"
-        task["message"] = "✅ 素材审查完成，请确认后继续"
+        task["message"] = "素材审查完成，请确认后继续"
 
     except Exception as e:
         task["status"] = "scan_complete"  # 回退到扫描完成状态，允许重试
@@ -1047,7 +1049,7 @@ def run_story(task_id: str):
     try:
         task["status"] = "developing_story"
         task["phase"] = "story"
-        task["progress"] = 50
+        task["progress"] = 32
         task["message"] = "AI 正在开发叙事结构..."
 
         review = task.get("review", {})
@@ -1062,13 +1064,14 @@ def run_story(task_id: str):
                 "identified_movie": {"identified": False},
             }
 
+        task["progress"] = 38
         script = develop_story(review, brief, run_path)
         task["story"] = script
         task["story_display"] = story_to_display(script)
 
-        task["progress"] = 60
+        task["progress"] = 45
         task["status"] = "story_complete"
-        task["message"] = "✅ 故事开发完成，请确认后继续（可跳过）"
+        task["message"] = "故事开发完成，请确认后继续（可跳过）"
 
     except Exception as e:
         task["status"] = "review_complete"  # 回退，允许跳过
@@ -1085,7 +1088,7 @@ def run_blueprint(task_id: str):
     try:
         task["status"] = "generating_blueprint"
         task["phase"] = "blueprint"
-        task["progress"] = 65
+        task["progress"] = 47
         task["message"] = "正在生成剪辑蓝图..."
 
         video_path = task.get("video_path", "")
@@ -1131,9 +1134,9 @@ def run_blueprint(task_id: str):
         task["blueprint"] = blueprint
         task["blueprint_display"] = blueprint_to_display(blueprint)
 
-        task["progress"] = 80
+        task["progress"] = 70
         task["status"] = "blueprint_complete"
-        task["message"] = "✅ 剪辑蓝图已生成，请审查后确认"
+        task["message"] = "剪辑蓝图已生成，请审查后确认"
 
     except Exception as e:
         task["status"] = "error"
@@ -1152,8 +1155,8 @@ def run_validate(task_id: str):
     try:
         task["status"] = "validating"
         task["phase"] = "validate"
-        task["progress"] = 82
-        task["message"] = "🔍 正在验证剪辑蓝图..."
+        task["progress"] = 72
+        task["message"] = "正在验证剪辑蓝图..."
 
         blueprint = task.get("blueprint", {})
         run_path = task.get("run_path", "")
@@ -1181,7 +1184,7 @@ def run_validate(task_id: str):
             except Exception as e:
                 print(f"   [WARN] 自动修复失败: {e}")
 
-        task["progress"] = 85
+        task["progress"] = 80
         task["status"] = "validation_complete"
         if not task.get("message"):
             task["message"] = "🔍 蓝图验证完成，请确认后开始构建"
@@ -1203,8 +1206,8 @@ def run_build(task_id: str):
     try:
         task["status"] = "building"
         task["phase"] = "build"
-        task["progress"] = 88
-        task["message"] = "📦 正在生成剪映草稿..."
+        task["progress"] = 82
+        task["message"] = "正在生成剪映草稿..."
 
         video_path = task.get("video_path", "")
         audio_paths = task.get("audio_paths", [])
@@ -1249,8 +1252,8 @@ def run_build(task_id: str):
         )
         task["draft_info"] = draft_info
 
-        task["progress"] = 95
-        task["message"] = "📊 正在审计交付..."
+        task["progress"] = 90
+        task["message"] = "正在审计交付..."
 
         # 交付审计
         audit_report = audit_delivery(
