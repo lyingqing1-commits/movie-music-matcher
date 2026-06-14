@@ -889,7 +889,12 @@ function switchToV2() {
 }
 
 // ---- v3 初始化 ----
+let v3Initialized = false;
+
 function initV3Mode() {
+    if (v3Initialized) return;  // 防止重复绑定事件
+    v3Initialized = true;
+
     // 简报创建
     document.getElementById("createBriefBtn").addEventListener("click", createBrief);
 
@@ -1100,9 +1105,13 @@ async function startV3Pipeline() {
 }
 
 // ---- v3 管道轮询 ----
+// 跟踪当前等待的阶段完成状态，避免竞态条件
+let pollingForPhase = null;
+
 async function pollV3Pipeline() {
     const maxAttempts = 600;
     let attempts = 0;
+    let lastStatus = "";
 
     while (attempts < maxAttempts) {
         await sleep(1000);
@@ -1112,30 +1121,41 @@ async function pollV3Pipeline() {
             const resp = await fetch("/api/pipeline/status/" + v3TaskId);
             const data = await resp.json();
 
-            v3CurrentPhase = data.phase || v3CurrentPhase;
-            updatePipelineStep(v3CurrentPhase, "active");
-
-            // 检查是否完成或等待确认
             const status = data.status || "";
-            if (status.endsWith("_complete")) {
-                updatePipelineStep(v3CurrentPhase, "completed");
-                showApprovalPanel(v3CurrentPhase, data);
-                return;
-            }
+            const phase = data.phase || v3CurrentPhase;
 
+            // 更新阶段显示
+            v3CurrentPhase = phase;
+            updatePipelineStep(phase, "active");
+
+            // 检查最终完成
             if (status === "completed") {
                 markAllPipelineStepsDone();
                 showV3Results(data);
                 return;
             }
 
-            if (status === "error") {
-                throw new Error(data.message);
+            // 检查是否到达阶段完成状态（等待确认）
+            // 关键：只接受 _complete 且状态已改变（排除竞态）
+            if (status.endsWith("_complete") && status !== lastStatus) {
+                // 额外确认：状态对应的阶段与当前阶段一致
+                const expectedComplete = phase + "_complete";
+                if (status === expectedComplete || status !== lastStatus) {
+                    updatePipelineStep(phase, "completed");
+                    showApprovalPanel(phase, data);
+                    return;
+                }
             }
+
+            if (status === "error") {
+                throw new Error(data.message || "管道处理出错");
+            }
+
+            lastStatus = status;
 
             // 更新进度信息
             if (data.message) {
-                updatePipelineStep(v3CurrentPhase, "active");
+                updatePipelineStep(phase, "active");
             }
         } catch (err) {
             if (err.message && (err.message.includes("❌") || err.message.includes("失败"))) {
@@ -1146,7 +1166,7 @@ async function pollV3Pipeline() {
         }
     }
 
-    alert("管道处理超时");
+    alert("管道处理超时（超过 10 分钟）");
 }
 
 // ---- v3 确认面板 ----
@@ -1167,6 +1187,9 @@ function showApprovalPanel(phase, data) {
 
     let summary = "";
     const review = document.getElementById("approvalReview");
+
+    // 默认隐藏跳过按钮，各阶段按需显示
+    document.getElementById("v3SkipBtn").style.display = "none";
 
     switch (phase) {
         case "media_scan":
@@ -1198,7 +1221,6 @@ function showApprovalPanel(phase, data) {
         case "blueprint":
             const bp = data.blueprint || {};
             summary = `${bp.total_clips || "?"} 个片段, ${bp.total_duration || "?"}s, 平均分 ${bp.avg_highlight_score || "?"}`;
-            // 简易时间线可视化
             let viz = '<div class="mini-timeline">';
             (bp.clips || []).forEach(c => {
                 const toneColors = {
@@ -1212,7 +1234,6 @@ function showApprovalPanel(phase, data) {
             viz += '</div>';
             review.innerHTML = viz +
                 '<p style="margin-top:8px;">情绪分布: ' + JSON.stringify(bp.emotional_tones || {}) + '</p>';
-            document.getElementById("v3SkipBtn").style.display = "none";
             break;
         case "validate":
             const val = data.validation || {};
@@ -1220,7 +1241,6 @@ function showApprovalPanel(phase, data) {
             review.innerHTML = (val.issues || []).map(i =>
                 `<div style="padding:2px 0;color:${i.level === 'error' ? 'var(--error)' : 'var(--warning)'};">${i.level}: ${i.message}</div>`
             ).join("") || "<p>验证通过</p>";
-            document.getElementById("v3SkipBtn").style.display = "none";
             break;
         default:
             summary = "阶段完成";
@@ -1243,11 +1263,16 @@ async function approvePhase() {
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error);
 
+        // 更新到下一阶段并等待完成
         v3CurrentPhase = data.next_phase;
         updatePipelineStep(v3CurrentPhase, "active");
+        // 短暂延迟，确保后端线程已启动
+        await sleep(500);
         await pollV3Pipeline();
     } catch (err) {
         alert("确认失败: " + err.message);
+        // 恢复面板以便重试
+        document.getElementById("approvalPanel").style.display = "block";
     }
 }
 
@@ -1261,9 +1286,11 @@ async function retryPhase() {
         });
         const data = await resp.json();
         if (!resp.ok) throw new Error(data.error);
+        await sleep(500);
         await pollV3Pipeline();
     } catch (err) {
         alert("重试失败: " + err.message);
+        document.getElementById("approvalPanel").style.display = "block";
     }
 }
 
@@ -1280,9 +1307,11 @@ async function skipPhase() {
 
         v3CurrentPhase = data.next_phase;
         updatePipelineStep(v3CurrentPhase, "active");
+        await sleep(500);
         await pollV3Pipeline();
     } catch (err) {
         alert("跳过失败: " + err.message);
+        document.getElementById("approvalPanel").style.display = "block";
     }
 }
 
