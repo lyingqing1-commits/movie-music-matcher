@@ -917,10 +917,12 @@ def api_default_export_path():
 
 @app.route("/health")
 def health():
-    """健康检查"""
+    """健康检查 — 实际验证 FFmpeg 是否可用"""
+    from modules.frame_extractor import is_ffmpeg_available
     return jsonify({
         "status": "ok",
-        "ffmpeg_ready": True,  # 假设已安装
+        "platform": sys.platform,
+        "ffmpeg_ready": is_ffmpeg_available(),
         "api_configured": bool(config.ANTHROPIC_API_KEY and config.ANTHROPIC_API_KEY.strip()),
     })
 
