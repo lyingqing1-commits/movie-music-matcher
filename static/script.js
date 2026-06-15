@@ -837,6 +837,8 @@ let v3VideoFile = null;
 let v3AudioFiles = [];
 
 // ---- v3/v2 模式切换 ----
+let v3Initialized = false;  // 必须在 URL 检测之前声明，避免 TDZ 错误
+
 const v3Switch = document.getElementById("v3Switch");
 const v2Content = document.getElementById("v2Content");
 const v3Content = document.getElementById("v3Content");
@@ -889,8 +891,6 @@ function switchToV2() {
 }
 
 // ---- v3 初始化 ----
-let v3Initialized = false;
-
 function initV3Mode() {
     if (v3Initialized) return;  // 防止重复绑定事件
     v3Initialized = true;
