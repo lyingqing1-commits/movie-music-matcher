@@ -236,7 +236,7 @@ def _build_blueprint_document(
             "timeline_out_seconds": audio_duration,
             "video_track": 0,
             "audio_track": 1,
-            "purpose": "背景音乐",
+            "purpose": "Background Music",
             "source_group": "audio",
             "confidence": 1.0,
         }
@@ -321,7 +321,7 @@ def _fallback_music_structure(duration: float, bpm: float) -> dict:
             {"section": "bridge", "start_time": duration * 0.65, "end_time": duration * 0.8, "energy_level": 0.45},
             {"section": "outro", "start_time": duration * 0.8, "end_time": duration, "energy_level": 0.25},
         ],
-        "key_moments": [{"time": duration * 0.4, "label": "副歌", "energy": 0.8}],
+        "key_moments": [{"time": duration * 0.4, "label": "Chorus", "energy": 0.8}],
         "overall_structure": "intro → verse → chorus → bridge → outro",
     }
 

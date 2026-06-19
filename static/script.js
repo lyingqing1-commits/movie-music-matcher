@@ -2,6 +2,153 @@
  * Movie Music Matcher - 前端交互逻辑
  */
 
+// ============================================
+// 🌐 国际化 (i18n) 引擎
+// ============================================
+
+const I18N = {
+    _locale: null,
+    _fallbackLocale: null,
+    _currentLang: "zh-CN",
+
+    /** 初始化：加载语言包，从 localStorage 读取偏好 */
+    async init() {
+        // 从 localStorage 读取语言偏好
+        const saved = localStorage.getItem("mmw_lang");
+        if (saved === "en" || saved === "en-US") {
+            this._currentLang = "en-US";
+        } else {
+            this._currentLang = "zh-CN";
+        }
+
+        // 加载语言包
+        try {
+            const resp = await fetch(`/static/locales/${this._currentLang}.json`);
+            this._locale = await resp.json();
+        } catch (err) {
+            console.warn("加载语言包失败，使用回退:", err.message);
+            this._locale = null;
+        }
+
+        // 加载回退语言包（用于键不存在时）
+        try {
+            if (this._currentLang === "en-US") {
+                const resp = await fetch("/static/locales/zh-CN.json");
+                this._fallbackLocale = await resp.json();
+            } else {
+                const resp = await fetch("/static/locales/en-US.json");
+                this._fallbackLocale = await resp.json();
+            }
+        } catch (err) {
+            this._fallbackLocale = null;
+        }
+
+        this._applyToDOM();
+        this._updateLangToggle();
+        this._updateHTML();
+    },
+
+    /** 切换语言 */
+    async switchLanguage() {
+        const newLang = this._currentLang === "zh-CN" ? "en-US" : "zh-CN";
+
+        // 加载新语言包
+        try {
+            const resp = await fetch(`/static/locales/${newLang}.json`);
+            this._locale = await resp.json();
+        } catch (err) {
+            console.warn("加载语言包失败:", err.message);
+            return;
+        }
+
+        this._currentLang = newLang;
+        localStorage.setItem("mmw_lang", newLang === "en-US" ? "en" : "zh");
+
+        this._applyToDOM();
+        this._updateLangToggle();
+        this._updateHTML();
+    },
+
+    /** 获取翻译文本 */
+    t(key) {
+        if (this._locale) {
+            const val = this._getNested(this._locale, key);
+            if (val !== undefined) return val;
+        }
+        if (this._fallbackLocale) {
+            const val = this._getNested(this._fallbackLocale, key);
+            if (val !== undefined) return val;
+        }
+        // 返回 key 本身作为兜底
+        const parts = key.split(".");
+        return parts[parts.length - 1];
+    },
+
+    /** 获取嵌套对象值 */
+    _getNested(obj, path) {
+        const parts = path.split(".");
+        let current = obj;
+        for (const part of parts) {
+            if (current == null || typeof current !== "object") return undefined;
+            current = current[part];
+        }
+        return current;
+    },
+
+    /** 将翻译应用到 DOM */
+    _applyToDOM() {
+        // data-i18n: 设置 textContent
+        document.querySelectorAll("[data-i18n]").forEach(el => {
+            const key = el.getAttribute("data-i18n");
+            if (key) {
+                el.textContent = this.t(key);
+            }
+        });
+
+        // data-i18n-placeholder: 设置 placeholder
+        document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+            const key = el.getAttribute("data-i18n-placeholder");
+            if (key) {
+                el.placeholder = this.t(key);
+            }
+        });
+
+        // data-i18n-title: 设置 title
+        document.querySelectorAll("[data-i18n-title]").forEach(el => {
+            const key = el.getAttribute("data-i18n-title");
+            if (key) {
+                el.title = this.t(key);
+            }
+        });
+    },
+
+    /** 更新语言切换按钮 */
+    _updateLangToggle() {
+        const label = document.getElementById("langToggleLabel");
+        if (label) {
+            label.textContent = this._currentLang === "zh-CN" ? "EN" : "中";
+        }
+        const btn = document.getElementById("langToggleBtn");
+        if (btn) {
+            btn.title = this._currentLang === "zh-CN"
+                ? "Switch to English"
+                : "切换到中文";
+        }
+    },
+
+    /** 更新 HTML 根元素 */
+    _updateHTML() {
+        document.documentElement.lang = this._currentLang;
+    }
+};
+
+// 便捷 t() 函数
+function t(key) {
+    return I18N.t(key);
+}
+
+// ============================================
+
 // ---- DOM 元素 ----
 const videoUploadBox = document.getElementById("videoUploadBox");
 const audioUploadBox = document.getElementById("audioUploadBox");
@@ -34,7 +181,7 @@ async function loadTutorial() {
         tutorialLoaded = true;
     } catch (err) {
         tutorialContent.innerHTML =
-            `<p style="color:var(--error)">加载教程失败: ${err.message}</p>`;
+            `<p style="color:var(--error)">${t("tutorial.loadFailed")}: ${err.message}</p>`;
     }
 }
 
@@ -61,13 +208,14 @@ let audioFiles = [];
 let editingMode = "video_first";
 let customExportPath = "";
 
-// ---- 剪辑模式选择 ----
-document.querySelectorAll(".editing-mode-cards .mode-card").forEach(card => {
+// ---- 剪辑模式选择 (V2) ----
+document.querySelectorAll("#editingModeSection .mode-card").forEach(card => {
     card.addEventListener("click", () => {
-        document.querySelectorAll(".editing-mode-cards .mode-card")
+        document.querySelectorAll("#editingModeSection .mode-card")
             .forEach(c => c.classList.remove("active"));
         card.classList.add("active");
         editingMode = card.dataset.mode;
+        console.log("[Mode] Switched to:", editingMode);
     });
 });
 
@@ -92,7 +240,7 @@ async function loadDefaultExportPath() {
         defaultPath = data.default_path || "";
         commonPaths = data.common_paths || [];
         exportPathInput.placeholder = defaultPath;
-        exportPathHint.textContent = "默认: " + defaultPath;
+        exportPathHint.textContent = "Default: " + defaultPath;
         // 构建路径建议列表
         buildExportPathSuggestions(commonPaths, exportPathSuggestions, exportPathInput);
     } catch (err) {
@@ -103,11 +251,12 @@ loadDefaultExportPath();
 
 // 构建路径建议列表
 function buildExportPathSuggestions(paths, container, inputEl) {
+    if (!container) return;  // 容器不存在则静默跳过
     if (!paths.length) {
         container.style.display = "none";
         return;
     }
-    let html = '<div class="path-suggestions-title">📂 常用路径（点击选择）：</div>';
+    let html = '<div class="path-suggestions-title">📂 Common paths (click to select):</div>';
     paths.forEach(p => {
         const icon = p.exists ? "📁" : "📁";
         html += `<div class="path-suggestion-item" data-path="${escapeHtml(p.path)}" title="${escapeHtml(p.path)}">
@@ -298,6 +447,273 @@ function checkReady() {
     }
 }
 
+// ============================================
+// 🌐 Ctrl+V 粘贴上传 & URL 下载
+// ============================================
+
+// ---- 全局粘贴监听 ----
+document.addEventListener("paste", (e) => {
+    const clipboardItems = e.clipboardData?.items;
+    if (!clipboardItems) return;
+
+    const isV3Active = document.getElementById("v3Content")?.style.display !== "none";
+
+    // 优先处理文件粘贴（如从文件管理器复制文件后粘贴）
+    for (const item of clipboardItems) {
+        if (item.kind === "file") {
+            e.preventDefault();
+            const file = item.getAsFile();
+            if (!file) continue;
+            const mime = file.type || "";
+            if (mime.startsWith("video/")) {
+                showPasteToast(t("toast.pastedVideo") + ": " + file.name);
+                if (isV3Active) {
+                    v3VideoFile = file;
+                    document.getElementById("v3VideoFileInfo").textContent =
+                        "✅ " + file.name + " (" + (file.size / 1024 / 1024).toFixed(1) + " MB)";
+                    document.getElementById("v3VideoUploadBox").classList.add("has-file");
+                    if (typeof checkV3Ready === "function") checkV3Ready();
+                } else {
+                    handleVideoFile(file);
+                }
+                return;
+            } else if (mime.startsWith("audio/")) {
+                showPasteToast(t("toast.pastedAudio") + ": " + file.name);
+                if (isV3Active) {
+                    v3AudioFiles = [file];
+                    document.getElementById("v3AudioFileInfo").innerHTML =
+                        "✅ " + file.name + " (" + (file.size / 1024 / 1024).toFixed(1) + " MB)";
+                    document.getElementById("v3AudioUploadBox").classList.add("has-file");
+                    if (typeof checkV3Ready === "function") checkV3Ready();
+                } else {
+                    handleAudioFiles([file]);
+                }
+                return;
+            }
+        }
+    }
+
+    // 如果没有文件，检查是否有 URL 文本
+    const text = e.clipboardData.getData("text/plain").trim();
+    if (text && (text.startsWith("http://") || text.startsWith("https://"))) {
+        e.preventDefault();
+        // 判断是视频还是音频链接
+        const lower = text.toLowerCase();
+        const isVideo = /\.(mp4|mov|avi|mkv|webm)(\?|$)/.test(lower);
+        const isAudio = /\.(mp3|wav|flac|aac|m4a|ogg)(\?|$)/.test(lower);
+
+        if (isVideo) {
+            showPasteToast(t("toast.detectedVideoLink"));
+            if (isV3Active) { v3DownloadFromUrl(text, "video"); }
+            else { downloadFromUrl(text, "video"); }
+        } else if (isAudio) {
+            showPasteToast(t("toast.detectedMusicLink"));
+            if (isV3Active) { v3DownloadFromUrl(text, "audio"); }
+            else { downloadFromUrl(text, "audio"); }
+        } else {
+            showPasteToast(t("toast.detectedLink"));
+        }
+    }
+});
+
+// ---- Toast 提示 ----
+let pasteToastTimer = null;
+function showPasteToast(msg) {
+    const toast = document.getElementById("pasteToast");
+    const toastMsg = document.getElementById("pasteToastMsg");
+    if (!toast || !toastMsg) return;
+    toastMsg.textContent = msg;
+    toast.style.display = "flex";
+    clearTimeout(pasteToastTimer);
+    pasteToastTimer = setTimeout(() => {
+        toast.style.display = "none";
+    }, 3000);
+}
+
+// ---- URL 按钮：切换 URL 输入行 ----
+function setupUrlToggle(btnId, rowId) {
+    const btn = document.getElementById(btnId);
+    const row = document.getElementById(rowId);
+    if (!btn || !row) return;
+    btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        row.style.display = row.style.display === "none" ? "flex" : "none";
+        const input = row.querySelector(".url-input");
+        if (input && row.style.display === "flex") {
+            input.focus();
+            // 尝试读取剪贴板中的 URL
+            navigator.clipboard?.readText?.().then(text => {
+                if (text && (text.startsWith("http://") || text.startsWith("https://"))) {
+                    input.value = text;
+                    showPasteToast(t("toast.clipboardFilled"));
+                }
+            }).catch(() => {});
+        }
+    });
+}
+
+// ---- URL 下载处理 ----
+function setupUrlGo(btnId, inputId, type) {
+    const btn = document.getElementById(btnId);
+    const input = document.getElementById(inputId);
+    if (!btn || !input) return;
+    btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const url = input.value.trim();
+        if (!url) return;
+        downloadFromUrl(url, type);
+    });
+    // Enter 键也可触发
+    input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+            e.preventDefault();
+            e.stopPropagation();
+            const url = input.value.trim();
+            if (url) downloadFromUrl(url, type);
+        }
+    });
+}
+
+// ---- 执行 URL 下载 ----
+async function downloadFromUrl(url, type) {
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        alert(t("toast.httpOnly"));
+        return;
+    }
+
+    showPasteToast(t("toast.downloading"));
+
+    try {
+        const resp = await fetch("/api/upload/url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url, type }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            alert(t("toast.downloadFailed") + ": " + (data.error || t("errors.unknownError")));
+            showPasteToast("❌ " + t("toast.downloadFailed") + ": " + (data.error || t("errors.unknownError")));
+            return;
+        }
+
+        // 创建 File 对象表示已下载的文件
+        const platform = data.platform || "URL";
+        showPasteToast(t("toast.downloadComplete") + " [" + platform + "]: " + data.filename + " (" + data.size_mb + "MB)");
+
+        // 触发文件处理
+        if (type === "video" && typeof handleVideoFile === "function") {
+            // 用已保存的路径通知用户
+            videoFile = new File([], data.filename, { type: "video/mp4" });
+            videoFile._serverPath = data.file_path;
+            videoFile._downloaded = true;
+            const sizeMB = data.size_mb;
+            document.getElementById("videoFileInfo").textContent =
+                `✅ ${data.filename} (${sizeMB} MB) [${t("uploadStates.fromPlatform")} ${platform}]`;
+            document.getElementById("videoUploadBox").classList.add("has-file");
+            checkReady();
+        } else if (type === "audio" && typeof handleAudioFiles === "function") {
+            const f = new File([], data.filename, { type: "audio/mpeg" });
+            f._serverPath = data.file_path;
+            f._downloaded = true;
+            audioFiles = [f];
+            document.getElementById("audioFileInfo").innerHTML =
+                `✅ ${data.filename} (${data.size_mb} MB) [${t("uploadStates.fromPlatform")} ${platform}]`;
+            document.getElementById("audioUploadBox").classList.add("has-file");
+            checkReady();
+        }
+    } catch (err) {
+        alert(t("errors.downloadRequestFailed") + ": " + err.message);
+        showPasteToast("❌ " + t("errors.downloadRequestFailed"));
+    }
+}
+
+// ---- V3 URL 下载 (同上，但使用 V3 的变量) ----
+async function v3DownloadFromUrl(url, type) {
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+        alert(t("toast.httpOnly"));
+        return;
+    }
+
+    const toast = document.getElementById("pasteToast");
+    const toastMsg = document.getElementById("pasteToastMsg");
+    if (toast && toastMsg) {
+        toastMsg.textContent = t("toast.downloading");
+        toast.style.display = "flex";
+        clearTimeout(pasteToastTimer);
+        pasteToastTimer = setTimeout(() => { toast.style.display = "none"; }, 3000);
+    }
+
+    try {
+        const resp = await fetch("/api/upload/url", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ url, type }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+            alert("下载失败: " + (data.error || "未知错误"));
+            return;
+        }
+
+        const platform = data.platform || "URL";
+        if (toast && toastMsg) {
+            toastMsg.textContent = t("toast.downloadComplete") + " [" + platform + "]: " + data.filename + " (" + data.size_mb + "MB)";
+            toast.style.display = "flex";
+            clearTimeout(pasteToastTimer);
+            pasteToastTimer = setTimeout(() => { toast.style.display = "none"; }, 3000);
+        }
+
+        if (type === "video") {
+            v3VideoFile = new File([], data.filename, { type: "video/mp4" });
+            v3VideoFile._serverPath = data.file_path;
+            v3VideoFile._downloaded = true;
+            document.getElementById("v3VideoFileInfo").textContent =
+                `✅ ${data.filename} (${data.size_mb} MB) [${t("uploadStates.fromPlatform")} ${platform}]`;
+            document.getElementById("v3VideoUploadBox").classList.add("has-file");
+            checkV3Ready();
+        } else if (type === "audio") {
+            const f = new File([], data.filename, { type: "audio/mpeg" });
+            f._serverPath = data.file_path;
+            f._downloaded = true;
+            v3AudioFiles = [f];
+            document.getElementById("v3AudioFileInfo").innerHTML =
+                `✅ ${data.filename} (${data.size_mb} MB) [${t("uploadStates.fromPlatform")} ${platform}]`;
+            document.getElementById("v3AudioUploadBox").classList.add("has-file");
+            checkV3Ready();
+        }
+    } catch (err) {
+        alert("下载请求失败: " + err.message);
+    }
+}
+
+// ---- 初始化 URL 上传功能 ----
+function initUrlUpload() {
+    // V2
+    setupUrlToggle("videoPasteBtn", "videoUrlRow");
+    setupUrlToggle("videoUrlBtn", "videoUrlRow");
+    setupUrlGo("videoUrlGo", "videoUrlInput", "video");
+    setupUrlToggle("audioPasteBtn", "audioUrlRow");
+    setupUrlToggle("audioUrlBtn", "audioUrlRow");
+    setupUrlGo("audioUrlGo", "audioUrlInput", "audio");
+
+    // V3
+    setupUrlToggle("v3VideoPasteBtn", "v3VideoUrlRow");
+    setupUrlToggle("v3VideoUrlBtn", "v3VideoUrlRow");
+    setupUrlGo("v3VideoUrlGo", "v3VideoUrlInput", "video");
+    setupUrlToggle("v3AudioPasteBtn", "v3AudioUrlRow");
+    setupUrlToggle("v3AudioUrlBtn", "v3AudioUrlRow");
+    setupUrlGo("v3AudioUrlGo", "v3AudioUrlInput", "audio");
+}
+
+// 页面加载时初始化
+document.addEventListener("DOMContentLoaded", async () => {
+    // 先初始化 i18n（必须在其他操作之前）
+    await I18N.init();
+    initUrlUpload();
+    // 重新应用 i18n（覆盖 URL 上传中可能动态生成的文本）
+    I18N._applyToDOM();
+});
+
 // ---- 开始分析 ----
 startBtn.addEventListener("click", async () => {
     if (!videoFile || audioFiles.length === 0) return;
@@ -313,7 +729,15 @@ startBtn.addEventListener("click", async () => {
 
     // 构建 FormData
     const formData = new FormData();
-    formData.append("video", videoFile);
+    if (videoFile._serverPath) {
+        // 从 URL 下载的文件，已在服务器上
+        formData.append("video_server_path", videoFile._serverPath);
+        formData.append("video_filename", videoFile.name);
+        // 仍然 append 一个空 Blob 以通过基本验证
+        formData.append("video", new Blob([""], { type: "video/mp4" }), videoFile.name);
+    } else {
+        formData.append("video", videoFile);
+    }
     formData.append("mode", "manual");
     formData.append("editing_mode", editingMode);
     // 读取自定义导出路径
@@ -321,11 +745,19 @@ startBtn.addEventListener("click", async () => {
     if (customExportPath) {
         formData.append("custom_export_path", customExportPath);
     }
-    audioFiles.forEach((f) => formData.append("audio", f));
+    audioFiles.forEach((f) => {
+        if (f._serverPath) {
+            formData.append("audio_server_paths", f._serverPath);
+            formData.append("audio_filenames_list", f.name);
+            formData.append("audio", new Blob([""], { type: "audio/mpeg" }), f.name);
+        } else {
+            formData.append("audio", f);
+        }
+    });
 
     try {
         // 上传
-        progressText.textContent = "正在上传文件...";
+        progressText.textContent = t("progress.uploading");
         progressPercent.textContent = "";
         progressBar.style.width = "5%";
 
@@ -393,7 +825,7 @@ async function pollTaskStatus(taskId) {
         }
     }
 
-    throw new Error("处理超时（超过 5 分钟），请检查文件大小或重试");
+    throw new Error(t("errors.processingTimeout"));
 }
 
 // ---- 显示结果 ----
@@ -409,39 +841,39 @@ function showResults(data) {
         styleContent.innerHTML = `
             <div class="result-grid">
                 <div class="result-item">
-                    <span class="result-label">电影类型</span>
+                    <span class="result-label">${t("results.genre")}</span>
                     <span class="result-value">${style.genre || "—"}</span>
                 </div>
                 <div class="result-item">
-                    <span class="result-label">情绪氛围</span>
+                    <span class="result-label">${t("results.mood")}</span>
                     <span class="result-value">${style.mood || "—"}</span>
                 </div>
                 <div class="result-item">
-                    <span class="result-label">色调风格</span>
+                    <span class="result-label">${t("results.colorPalette")}</span>
                     <span class="result-value">${style.color_palette || "—"}</span>
                 </div>
                 <div class="result-item">
-                    <span class="result-label">画面节奏</span>
+                    <span class="result-label">${t("results.pacing")}</span>
                     <span class="result-value">${style.pacing || "—"}</span>
                 </div>
                 <div class="result-item">
-                    <span class="result-label">视觉风格</span>
+                    <span class="result-label">${t("results.visualStyle")}</span>
                     <span class="result-value">${style.visual_style || "—"}</span>
                 </div>
                 <div class="result-item">
-                    <span class="result-label">推荐音乐流派</span>
+                    <span class="result-label">${t("results.recommendedGenre")}</span>
                     <span class="result-value">${style.recommended_music?.genre || "—"}</span>
                 </div>
             </div>
             <div style="margin-top:12px;">
-                <span class="result-label">核心主题</span>
+                <span class="result-label">${t("results.coreThemes")}</span>
                 <div class="themes-list" style="margin-top:6px;">
                     ${(style.themes || []).map(t => `<span class="theme-tag">${t}</span>`).join("")}
                 </div>
             </div>
         `;
     } else {
-        styleContent.innerHTML = `<p style="color:var(--text-secondary)">风格分析结果解析中...</p>`;
+        styleContent.innerHTML = `<p style="color:var(--text-secondary)">${t("results.styleParsing")}</p>`;
     }
 
     // 音乐匹配结果
@@ -454,20 +886,20 @@ function showResults(data) {
                 const match = m.match || {};
                 const score = match.match_score || 0;
                 const scoreClass = score >= 70 ? "high" : score >= 40 ? "medium" : "low";
-                const name = m.file_path ? m.file_path.split(/[/\\]/).pop() : `音乐 ${i + 1}`;
+                const name = m.file_path ? m.file_path.split(/[/\\]/).pop() : `Music ${i + 1}`;
                 const isBest = i === 0 ? " 🏆" : "";
 
                 return `
                 <div class="match-item">
                     <div class="match-item-header">
                         <span class="match-item-name">${name}${isBest}</span>
-                        <span class="match-item-score ${scoreClass}">${score} 分</span>
+                        <span class="match-item-score ${scoreClass}">${score} ${t("results.score")}</span>
                     </div>
                     <p style="font-size:0.85rem;color:var(--text-secondary);margin-bottom:6px;">
                         ${match.analysis || ""}
                     </p>
                     <div style="font-size:0.8rem;color:var(--text-secondary);">
-                        BPM: ${m.tempo_bpm || "?"} | 调性: ${m.estimated_key || "?"} | 时长: ${m.duration_seconds || "?"}s
+                        BPM: ${m.tempo_bpm || "?"} | Key: ${m.estimated_key || "?"} | Duration: ${m.duration_seconds || "?"}s
                     </div>
                     ${match.editing_suggestion ? `
                     <div style="margin-top:8px;padding:8px;background:rgba(108,99,255,0.08);border-radius:6px;font-size:0.85rem;">
@@ -478,7 +910,7 @@ function showResults(data) {
             })
             .join("");
     } else {
-        matchContent.innerHTML = `<p style="color:var(--text-secondary)">未找到匹配结果</p>`;
+        matchContent.innerHTML = `<p style="color:var(--text-secondary)">${t("results.noMatch")}</p>`;
     }
 
     // 智能剪辑信息
@@ -486,21 +918,21 @@ function showResults(data) {
         const ssi = data.smart_segments_info;
         const smartCard = document.createElement("div");
         smartCard.className = "result-card";
-        const modeLabel = data.editing_mode === "video_first" ? "🎬 视频优先" : "🎵 音乐优先";
+        const modeLabel = data.editing_mode === "video_first" ? t("results.videoFirstLabel") : t("results.musicFirstLabel");
         smartCard.innerHTML = `
-            <h3>✂️ 智能剪辑详情</h3>
+            <h3>✂️ ${t("results.smartEdit")}</h3>
             <div class="result-grid">
                 <div class="result-item">
-                    <span class="result-label">剪辑模式</span>
+                    <span class="result-label">${t("results.editModeLabel")}</span>
                     <span class="result-value">${modeLabel}</span>
                 </div>
                 <div class="result-item">
-                    <span class="result-label">检测场景</span>
-                    <span class="result-value">${ssi.scene_count || "?"} 个</span>
+                    <span class="result-label">${t("results.detectedScenes")}</span>
+                    <span class="result-value">${ssi.scene_count || "?"}</span>
                 </div>
                 <div class="result-item">
-                    <span class="result-label">生成片段</span>
-                    <span class="result-value">${ssi.segment_count || "?"} 个</span>
+                    <span class="result-label">${t("results.generatedSegments")}</span>
+                    <span class="result-value">${ssi.segment_count || "?"}</span>
                 </div>
             </div>
         `;
@@ -514,8 +946,8 @@ function showResults(data) {
         movieCard.className = "result-card";
         const knowledge = mi.ai_knowledge || {};
         movieCard.innerHTML = `
-            <h3>🎬 已识别电影</h3>
-            <p><strong>${mi.movie_name}</strong> (${mi.year || ""}) — 置信度: ${mi.confidence || "?"}</p>
+            <h3>🎬 ${t("results.identifiedMovie")}</h3>
+            <p><strong>${mi.movie_name}</strong> (${mi.year || ""}) — Confidence: ${mi.confidence || "?"}</p>
             ${knowledge.plot_summary ? `<p style="font-size:0.85rem;color:var(--text-secondary);margin-top:6px;">${knowledge.plot_summary}</p>` : ""}
             ${knowledge.themes && knowledge.themes.length ? `<div class="themes-list" style="margin-top:8px;">${knowledge.themes.map(t => `<span class="theme-tag">${t}</span>`).join("")}</div>` : ""}
         `;
@@ -528,7 +960,7 @@ function showResults(data) {
         const structCard = document.createElement("div");
         structCard.className = "result-card";
         structCard.innerHTML = `
-            <h3>🎵 音乐结构分析</h3>
+            <h3>🎵 ${t("results.musicStructure")}</h3>
             <div class="music-structure-viz" style="display:flex;height:24px;border-radius:6px;overflow:hidden;margin-bottom:8px;">
                 ${ms.structure.map(s => {
                     const colors = {intro:"#4a90d9", verse:"#67c23a", pre_chorus:"#e6a23c", chorus:"#f56c6c", drop:"#ff3b3b", bridge:"#909399", buildup:"#e6a23c", outro:"#4a90d9", breakdown:"#909399", interlude:"#b0c4de", final_chorus:"#ff3b3b", climax:"#ff3b3b"};
@@ -549,13 +981,13 @@ function showResults(data) {
         const draftCard = document.createElement("div");
         draftCard.className = "result-card";
         draftCard.innerHTML = `
-            <h3>✂️ 剪映草稿已生成</h3>
-            <p style="margin-bottom:8px;">草稿名称: <strong>${draft.draft_name}</strong></p>
-            <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:8px;">📁 导出位置: <code style="font-size:0.78rem;">${exportPath}</code></p>
+            <h3>✂️ ${t("results.draftGenerated")}</h3>
+            <p style="margin-bottom:8px;">${t("results.draftName")}: <strong>${draft.draft_name}</strong></p>
+            <p style="font-size:0.82rem;color:var(--text-secondary);margin-bottom:8px;">📁 ${t("results.exportLocation")}: <code style="font-size:0.78rem;">${exportPath}</code></p>
             ${draft.capcut_draft_path
-                ? `<p style="color:var(--success);">✅ 草稿已自动复制到剪映目录，请在剪映中打开查看！</p>`
-                : `<p style="color:var(--text-secondary);">📂 草稿保存在: ${draft.draft_folder}</p>
-                   <p style="color:var(--warning);">⚠️ 请手动将草稿文件夹复制到剪映草稿目录</p>`
+                ? `<p style="color:var(--success);">✅ ${t("results.draftSynced")}</p>`
+                : `<p style="color:var(--text-secondary);">📂 ${t("results.draftManual")}: ${draft.draft_folder}</p>
+                   <p style="color:var(--warning);">⚠️ ${t("results.draftManualHint")}</p>`
             }
             ${draft.editing_hint ? `<p style="margin-top:8px;color:var(--text-secondary);">💡 ${draft.editing_hint}</p>` : ""}
         `;
@@ -623,21 +1055,30 @@ document.addEventListener("keydown", (e) => {
 });
 
 function resetUpdateUI() {
-    document.getElementById("updateAppVersion").textContent = "检测中...";
-    document.getElementById("updateAppDesc").textContent = "—";
-    document.getElementById("updateEditorName").textContent = "检测中...";
-    document.getElementById("updateEditorVersion").textContent = "—";
-    document.getElementById("updateCompatStatus").textContent = "检测中...";
-    document.getElementById("updateJypRange").textContent = "—";
-    document.getElementById("updateCapcutRange").textContent = "—";
-    document.getElementById("updateAvailableSection").style.display = "none";
-    document.getElementById("updateProgressSection").style.display = "none";
-    document.getElementById("updateMessage").style.display = "none";
-    document.getElementById("updateGitInfo").style.display = "none";
-    document.getElementById("updateMethodRow").style.display = "none";
+    const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    const setDisplay = (id, val) => { const el = document.getElementById(id); if (el) el.style.display = val; };
+
+    setText("updateAppVersion", t("update.detecting"));
+    setText("updateAppDesc", "—");
+    setText("updateEditorName", t("update.detecting"));
+    setText("updateEditorVersion", "—");
+    setText("updateCompatStatus", t("update.detecting"));
+    setText("updateJypRange", "—");
+    setText("updateCapcutRange", "—");
+    setDisplay("updateAvailableSection", "none");
+    setDisplay("updateProgressSection", "none");
+    setDisplay("updateMessage", "none");
+    setDisplay("updateGitInfo", "none");
+    setDisplay("updateMethodRow", "none");
 }
 
 async function checkForUpdate() {
+    const setText = (id, text) => { const el = document.getElementById(id); if (el) el.textContent = text; };
+    const setHTML = (id, html) => { const el = document.getElementById(id); if (el) el.innerHTML = html; };
+    const setDisplay = (id, val) => { const el = document.getElementById(id); if (el) el.style.display = val; };
+    const setClass = (id, cls) => { const el = document.getElementById(id); if (el) el.className = cls; };
+    const getEl = (id) => document.getElementById(id);
+
     try {
         const resp = await fetch("/api/check-update");
         const data = await resp.json();
@@ -645,103 +1086,97 @@ async function checkForUpdate() {
         const compat = data.compatibility || {};
 
         // 填充当前版本信息
-        document.getElementById("updateAppVersion").textContent =
-            `Movie Music Matcher v${compat.app_version || "—"}`;
-        document.getElementById("updateAppDesc").textContent =
-            compat.description || "—";
+        setText("updateAppVersion", `Movie Music Matcher v${compat.app_version || "—"}`);
+        setText("updateAppDesc", compat.description || "—");
 
         // 编辑器信息
-        document.getElementById("updateEditorName").textContent =
-            compat.editor_name || "未检测到";
-        document.getElementById("updateEditorVersion").textContent =
-            compat.editor_version || "未安装";
+        setText("updateEditorName", compat.editor_name || t("update.notDetected"));
+        setText("updateEditorVersion", compat.editor_version || t("update.notInstalled"));
 
         // 兼容状态
-        const compatStatus = document.getElementById("updateCompatStatus");
-        if (compat.is_compatible) {
-            compatStatus.innerHTML = '<span class="compat-badge compat-ok">✅ 当前版本兼容</span>';
-        } else {
-            compatStatus.innerHTML = '<span class="compat-badge compat-warn">⚠️ 版本不兼容，建议更新</span>';
+        const compatStatus = getEl("updateCompatStatus");
+        if (compatStatus) {
+            if (compat.is_compatible) {
+                compatStatus.innerHTML = '<span class="compat-badge compat-ok">' + t("update.compatible") + '</span>';
+            } else {
+                compatStatus.innerHTML = '<span class="compat-badge compat-warn">' + t("update.incompatible") + '</span>';
+            }
         }
 
         // 兼容范围
-        document.getElementById("updateJypRange").textContent =
-            compat.compatible_jyp_range || "—";
-        document.getElementById("updateCapcutRange").textContent =
-            compat.compatible_capcut_range || "—";
+        setText("updateJypRange", compat.compatible_jyp_range || "—");
+        setText("updateCapcutRange", compat.compatible_capcut_range || "—");
 
         // 更新可用
         if (data.has_update && data.update_info) {
             const info = data.update_info;
-            document.getElementById("updateLatestVersion").textContent =
-                `v${info.version}`;
-            document.getElementById("updateLatestDesc").textContent =
-                info.description || "—";
-            document.getElementById("updateLatestJyp").textContent =
-                info.compatible_jyp_range || "—";
-            document.getElementById("updateAvailableSection").style.display = "block";
+            setText("updateLatestVersion", `v${info.version}`);
+            setText("updateLatestDesc", info.description || "—");
+            setText("updateLatestJyp", info.compatible_jyp_range || "—");
+            setDisplay("updateAvailableSection", "block");
 
             // 更新目标说明
             if (info.best_for_editor) {
-                document.getElementById("updateLatestVersion").textContent =
-                    `v${info.version}（适配 ${info.best_for_editor}）`;
+                setText("updateLatestVersion", `v${info.version}（适配 ${info.best_for_editor}）`);
             }
 
             // 更新方式
-            const methodRow = document.getElementById("updateMethodRow");
-            const methodSpan = document.getElementById("updateMethod");
-            const gitInfo = document.getElementById("updateGitInfo");
-            const gitBadge = document.getElementById("updateGitBadge");
-            const gitDetail = document.getElementById("updateGitDetail");
-            const startBtn = document.getElementById("startUpdateBtn");
+            const methodRow = getEl("updateMethodRow");
+            const methodSpan = getEl("updateMethod");
+            const gitInfo = getEl("updateGitInfo");
+            const gitBadge = getEl("updateGitBadge");
+            const gitDetail = getEl("updateGitDetail");
+            const startBtn = getEl("startUpdateBtn");
 
             const updateMethod = data.update_method || "manual";
 
             if (updateMethod === "git") {
-                methodRow.style.display = "flex";
-                methodSpan.innerHTML = '<span class="compat-badge compat-ok">🔄 Git 自动更新</span>';
-                startBtn.textContent = "🚀 一键 Git 更新";
-                startBtn.className = "btn-primary btn-git-update";
+                if (methodRow) methodRow.style.display = "flex";
+                if (methodSpan) methodSpan.innerHTML = '<span class="compat-badge compat-ok">' + t("update.gitAutoUpdate") + '</span>';
+                if (startBtn) { startBtn.textContent = t("update.oneClickGit"); startBtn.className = "btn-primary btn-git-update"; }
 
                 // Git 详情
                 if (data.git_check) {
-                    gitInfo.style.display = "block";
+                    if (gitInfo) gitInfo.style.display = "block";
                     const gc = data.git_check;
                     if (gc.remote_url) {
-                        gitBadge.innerHTML = '<span class="compat-badge compat-ok">✅ Git 已连接</span>';
-                        gitDetail.innerHTML = `
-                            远程仓库：${gc.remote_url}<br>
-                            落后提交：<strong>${gc.behind_count || 0}</strong> 个
+                        if (gitBadge) gitBadge.innerHTML = '<span class="compat-badge compat-ok">' + t("update.gitConnected") + '</span>';
+                        if (gitDetail) gitDetail.innerHTML = `
+                            ${t("update.remoteRepo")}: ${gc.remote_url}<br>
+                            ${t("update.behindCommits")}: <strong>${gc.behind_count || 0}</strong>
                         `;
                     } else {
-                        gitBadge.innerHTML = '<span class="compat-badge compat-warn">⚠️ Git 未配置远程</span>';
+                        if (gitBadge) gitBadge.innerHTML = '<span class="compat-badge compat-warn">' + t("update.gitNotConfigured") + '</span>';
                     }
                 }
             } else {
-                methodRow.style.display = "flex";
-                methodSpan.innerHTML = '<span class="compat-badge compat-warn">📥 手动下载更新</span>';
-                startBtn.textContent = "🚀 开始更新";
-                startBtn.className = "btn-primary";
+                if (methodRow) methodRow.style.display = "flex";
+                if (methodSpan) methodSpan.innerHTML = '<span class="compat-badge compat-warn">' + t("update.manualDownload") + '</span>';
+                if (startBtn) { startBtn.textContent = t("update.startUpdate"); startBtn.className = "btn-primary"; }
 
                 // 显示 Git 设置指引
                 if (data.git_check && data.git_check.error) {
-                    gitInfo.style.display = "block";
-                    gitBadge.innerHTML = '<span class="compat-badge compat-warn">💡 建议启用 Git 自动更新</span>';
-                    gitDetail.textContent = data.git_check.error;
+                    if (gitInfo) gitInfo.style.display = "block";
+                    if (gitBadge) gitBadge.innerHTML = '<span class="compat-badge compat-warn">' + t("update.suggestGit") + '</span>';
+                    if (gitDetail) gitDetail.textContent = data.git_check.error;
                 }
             }
         } else {
             // 没有更新，显示提示
-            const msg = document.getElementById("updateMessage");
-            msg.style.display = "block";
-            msg.className = "update-message update-message-info";
-            msg.textContent = "✅ 当前已是最新版本，无需更新。";
+            const msg = getEl("updateMessage");
+            if (msg) {
+                msg.style.display = "block";
+                msg.className = "update-message update-message-info";
+                msg.textContent = t("update.noUpdate");
+            }
         }
     } catch (err) {
-        const msg = document.getElementById("updateMessage");
-        msg.style.display = "block";
-        msg.className = "update-message update-message-error";
-        msg.textContent = "❌ 检查更新失败：" + err.message;
+        const msg = getEl("updateMessage");
+        if (msg) {
+            msg.style.display = "block";
+            msg.className = "update-message update-message-error";
+            msg.textContent = "❌ " + t("update.checkFailed") + ": " + err.message;
+        }
     }
 }
 
@@ -768,7 +1203,7 @@ startUpdateBtn.addEventListener("click", async () => {
         }
 
         if (!startData.success) {
-            throw new Error(startData.message || "更新启动失败");
+            throw new Error(startData.message || t("errors.updateStartFailed"));
         }
 
         // 轮询更新进度
@@ -820,7 +1255,7 @@ async function pollUpdateProgress() {
         }
     }
 
-    throw new Error("更新超时，请重试");
+    throw new Error(t("errors.updateTimeout"));
 }
 
 // ============================================
@@ -868,13 +1303,10 @@ function switchToV3() {
     isV3Mode = true;
     v2Content.style.display = "none";
     v3Content.style.display = "block";
-    v2Subtitle.style.display = "none";
-    v3Subtitle.style.display = "";
+    if (v2Subtitle) v2Subtitle.style.display = "none";
+    if (v3Subtitle) v3Subtitle.style.display = "";
     document.getElementById("v2Badge").style.opacity = "0.5";
     document.getElementById("v3Badge").style.opacity = "1";
-    // 隐藏 v2 的教程和更新按钮
-    document.getElementById("tutorialBtn").style.display = "none";
-    document.getElementById("updateBtn").style.display = "none";
     initV3Mode();
 }
 
@@ -882,18 +1314,19 @@ function switchToV2() {
     isV3Mode = false;
     v2Content.style.display = "";
     v3Content.style.display = "none";
-    v2Subtitle.style.display = "";
-    v3Subtitle.style.display = "none";
+    if (v2Subtitle) v2Subtitle.style.display = "";
+    if (v3Subtitle) v3Subtitle.style.display = "none";
     document.getElementById("v2Badge").style.opacity = "1";
     document.getElementById("v3Badge").style.opacity = "0.5";
-    document.getElementById("tutorialBtn").style.display = "";
-    document.getElementById("updateBtn").style.display = "";
 }
 
 // ---- v3 初始化 ----
 function initV3Mode() {
     if (v3Initialized) return;  // 防止重复绑定事件
     v3Initialized = true;
+
+    // 偏好芯片选择器
+    initPrefChips();
 
     // 简报创建
     document.getElementById("createBriefBtn").addEventListener("click", createBrief);
@@ -951,7 +1384,7 @@ async function loadV3ExportPath() {
         const resp = await fetch("/api/default-export-path");
         const data = await resp.json();
         document.getElementById("v3ExportPathInput").placeholder = data.default_path || "";
-        document.getElementById("v3ExportPathHint").textContent = "默认: " + (data.default_path || "");
+        document.getElementById("v3ExportPathHint").textContent = "Default: " + (data.default_path || "");
         // 构建 v3 路径建议
         const v3Paths = data.common_paths || [];
         buildExportPathSuggestions(
@@ -964,23 +1397,139 @@ async function loadV3ExportPath() {
     }
 }
 
+// ============================================
+// 🎨 偏好设置 Chip 选择器
+// ============================================
+
+let selectedPrefs = {};  // { group: [values] }
+
+function initPrefChips() {
+    let needsI18nReapply = false;
+
+    document.querySelectorAll(".prefs-chips").forEach(chipGroup => {
+        const groupName = chipGroup.dataset.prefsGroup;
+        if (!groupName) return;
+        selectedPrefs[groupName] = [];
+
+        // 为每个分类添加计数徽章（放在 label 后面作为兄弟节点，避免被 i18n textContent 清除）
+        const catLabel = chipGroup.closest(".prefs-category")?.querySelector(".prefs-cat-label");
+        if (catLabel) {
+            // 将 label 的文本包裹在 span 中，方便 i18n 单独更新
+            if (!catLabel.querySelector(".prefs-cat-text")) {
+                const textSpan = document.createElement("span");
+                textSpan.className = "prefs-cat-text";
+                textSpan.textContent = catLabel.textContent || "";
+                catLabel.textContent = "";
+                catLabel.appendChild(textSpan);
+                // 移除 data-i18n 避免 i18n 覆盖整个 label
+                const i18nKey = catLabel.getAttribute("data-i18n");
+                catLabel.removeAttribute("data-i18n");
+                if (i18nKey) {
+                    textSpan.setAttribute("data-i18n", i18nKey);
+                    needsI18nReapply = true;  // 新元素需要翻译
+                }
+            }
+            // 添加计数徽章
+            if (!catLabel.parentElement.querySelector(".pref-count-badge")) {
+                const badge = document.createElement("span");
+                badge.className = "pref-count-badge";
+                badge.style.display = "none";
+                catLabel.insertAdjacentElement("afterend", badge);
+            }
+        }
+
+        chipGroup.querySelectorAll(".pref-chip").forEach(chip => {
+            chip.addEventListener("click", () => {
+                const value = chip.dataset.prefsValue;
+                if (!value) return;
+
+                // 切换选中状态
+                chip.classList.toggle("active");
+
+                if (chip.classList.contains("active")) {
+                    if (!selectedPrefs[groupName].includes(value)) {
+                        selectedPrefs[groupName].push(value);
+                    }
+                } else {
+                    selectedPrefs[groupName] = selectedPrefs[groupName].filter(v => v !== value);
+                }
+
+                updatePrefsSummary();
+                updateCatBadge(chipGroup, groupName);
+            });
+        });
+    });
+
+    // 如果 i18n 已初始化且我们创建了新的 data-i18n 元素，重新应用翻译
+    if (needsI18nReapply && I18N._locale) {
+        I18N._applyToDOM();
+    }
+}
+
+function updateCatBadge(chipGroup, groupName) {
+    const catLabel = chipGroup.closest(".prefs-category")?.querySelector(".prefs-cat-label");
+    if (!catLabel) return;
+    // 徽章是 label 的下一个兄弟元素
+    const badge = catLabel.nextElementSibling;
+    if (!badge || !badge.classList.contains("pref-count-badge")) return;
+
+    const count = (selectedPrefs[groupName] || []).length;
+    if (count > 0) {
+        badge.textContent = count;
+        badge.style.display = "inline-flex";
+    } else {
+        badge.style.display = "none";
+    }
+}
+
+function updatePrefsSummary() {
+    const summary = document.getElementById("prefsSelectedSummary");
+    const tags = document.getElementById("prefsSelectedTags");
+    if (!summary || !tags) return;
+
+    const allSelected = Object.values(selectedPrefs).flat();
+    if (allSelected.length === 0) {
+        summary.style.display = "none";
+        return;
+    }
+
+    summary.style.display = "flex";
+    tags.innerHTML = allSelected
+        .map(v => `<span class="pref-summary-tag">${v.replace(/_/g, " ")}</span>`)
+        .join("");
+}
+
+function collectPrefsData() {
+    // 返回结构化偏好对象，只包含有选择的组
+    const result = {};
+    for (const [group, values] of Object.entries(selectedPrefs)) {
+        if (values.length > 0) {
+            result[group] = values;
+        }
+    }
+    return result;
+}
+
 // ---- v3 简报创建 ----
 async function createBrief() {
     const topic = document.getElementById("briefTopic").value.trim();
     if (!topic) {
-        alert("请输入项目主题");
+        alert(t("errors.briefTopicRequired"));
         return;
     }
+
+    // 收集结构化偏好
+    const prefsData = collectPrefsData();
+
+    const editingMode = document.getElementById("briefEditingMode").value;
 
     const briefData = {
         topic: topic,
         target_duration: parseInt(document.getElementById("briefDuration").value) || 120,
         platform: document.getElementById("briefPlatform").value,
         aspect_ratio: document.getElementById("briefAspectRatio").value,
-        language: document.getElementById("briefLanguage").value,
-        editing_mode: document.getElementById("briefEditingMode").value,
-        narration_enabled: document.getElementById("briefNarration").value === "true",
-        editing_preferences: document.getElementById("briefPreferences").value,
+        editing_mode: editingMode,
+        editing_preferences: JSON.stringify(prefsData),
     };
 
     try {
@@ -990,20 +1539,44 @@ async function createBrief() {
             body: JSON.stringify(briefData),
         });
         const data = await resp.json();
-        if (!resp.ok) throw new Error(data.error || "创建失败");
+        if (!resp.ok) throw new Error(data.error || t("errors.briefCreateFailed"));
 
         v3TaskId = data.task_id;
         v3ProjectSlug = data.project_slug;
+        // 同步剪辑模式到 V3 后续步骤
+        v3EditingMode = editingMode;
 
-        // 显示上传区域
+        // 显示上传区域（先更新 DOM）
         document.getElementById("briefSection").style.display = "none";
         document.getElementById("v3UploadSection").style.display = "grid";
         document.getElementById("v3EditingSection").style.display = "block";
         document.getElementById("v3UploadBtnBar").style.display = "block";
 
-        alert("✅ 简报已创建！项目: " + data.project_slug + "\n请选择视频和音乐文件后点击「开始管道处理」");
+        // 同步剪辑模式卡片的高亮
+        document.querySelectorAll("[data-v3-mode]").forEach(c => {
+            c.classList.toggle("active", c.dataset.v3Mode === editingMode);
+        });
+
+        // 强制触发 IntersectionObserver 重新检测（.reveal 元素从 display:none 变为可见）
+        document.querySelectorAll("#v3UploadSection.reveal, #v3EditingSection.reveal, #v3UploadBtnBar.reveal").forEach(el => {
+            el.classList.add("visible");
+        });
+
+        // 滚动到上传区域
+        document.getElementById("v3UploadSection").scrollIntoView({ behavior: "smooth", block: "start" });
+
+        // 使用 setTimeout 延迟 alert，让浏览器先完成渲染
+        const prefsInfo = data.ai_interpretation || data.preferences_summary || "";
+        setTimeout(() => {
+            let alertMsg = t("errors.promptBriefCreated") + ": " + data.project_slug;
+            if (prefsInfo) {
+                alertMsg += "\n\n" + (data.ai_interpretation ? "[AI Style Guide]\n" : "[Preferences]\n") + prefsInfo;
+            }
+            alertMsg += "\n\n" + t("errors.briefCreated");
+            alert(alertMsg);
+        }, 300);
     } catch (err) {
-        alert("创建简报失败: " + err.message);
+        alert(t("errors.briefCreateFailed") + ": " + err.message);
     }
 }
 
@@ -1014,6 +1587,15 @@ function setupV3Upload() {
     const v3VideoInput = document.getElementById("v3VideoInput");
     const v3AudioInput = document.getElementById("v3AudioInput");
 
+    if (!v3VideoBox || !v3AudioBox || !v3VideoInput || !v3AudioInput) {
+        console.error("[V3 Upload] Cannot setup - elements not found:", {
+            videoBox: !!v3VideoBox, audioBox: !!v3AudioBox,
+            videoInput: !!v3VideoInput, audioInput: !!v3AudioInput
+        });
+        return;
+    }
+
+    console.log("[V3 Upload] Setup complete - boxes ready for click/drag");
     v3VideoBox.addEventListener("click", () => v3VideoInput.click());
     v3AudioBox.addEventListener("click", () => v3AudioInput.click());
 
@@ -1068,18 +1650,39 @@ function checkV3Ready() {
 
 // ---- v3 管道启动 ----
 async function startV3Pipeline() {
-    if (!v3VideoFile) return;
+    if (!v3VideoFile) {
+        alert(t("errors.noVideoFile") || "Please select a video file first");
+        return;
+    }
+    if (!v3AudioFiles || v3AudioFiles.length === 0) {
+        alert(t("errors.noAudioFile") || "Please select at least one music file");
+        return;
+    }
 
     v3CustomExportPath = document.getElementById("v3ExportPathInput").value.trim();
 
     const formData = new FormData();
-    formData.append("video", v3VideoFile);
+    if (v3VideoFile._serverPath) {
+        formData.append("video_server_path", v3VideoFile._serverPath);
+        formData.append("video_filename", v3VideoFile.name);
+        formData.append("video", new Blob([""], { type: "video/mp4" }), v3VideoFile.name);
+    } else {
+        formData.append("video", v3VideoFile);
+    }
     formData.append("project_slug", v3ProjectSlug);
     formData.append("editing_mode", v3EditingMode);
     if (v3CustomExportPath) {
         formData.append("custom_export_path", v3CustomExportPath);
     }
-    v3AudioFiles.forEach(f => formData.append("audio", f));
+    v3AudioFiles.forEach(f => {
+        if (f._serverPath) {
+            formData.append("audio_server_paths", f._serverPath);
+            formData.append("audio_filenames_list", f.name);
+            formData.append("audio", new Blob([""], { type: "audio/mpeg" }), f.name);
+        } else {
+            formData.append("audio", f);
+        }
+    });
 
     // 隐藏上传区，显示管道步骤+进度条
     document.getElementById("v3UploadBtnBar").style.display = "none";
@@ -1099,10 +1702,10 @@ async function startV3Pipeline() {
         v3TaskId = data.task_id;
         v3CurrentPhase = data.phase || "media_scan";
         updatePipelineStep(v3CurrentPhase, "active");
-        updatePipelineProgress(v3CurrentPhase, 0, "上传完成，开始处理...");
+        updatePipelineProgress(v3CurrentPhase, 0, t("pipeline.statusInit"));
         await pollV3Pipeline();
     } catch (err) {
-        alert("管道启动失败: " + err.message);
+        alert(t("errors.pipelineStartFailed") + ": " + err.message);
         // 恢复UI
         document.getElementById("pipelineProgressSection").style.display = "none";
         document.getElementById("pipelineSteps").style.display = "none";
@@ -1137,7 +1740,7 @@ async function pollV3Pipeline() {
 
             // 检查最终完成
             if (status === "completed") {
-                updatePipelineProgress("build", 100, "全部完成！");
+                updatePipelineProgress("build", 100, t("pipeline.phaseNames.build") + " ✅");
                 markAllPipelineStepsDone();
                 document.getElementById("pipelineProgressSection").style.display = "none";
                 showV3Results(data);
@@ -1147,27 +1750,27 @@ async function pollV3Pipeline() {
             // 检查是否到达阶段完成状态（等待确认）
             if (status.endsWith("_complete") && status !== lastStatus) {
                 updatePipelineStep(phase, "completed");
-                updatePipelineProgress(phase, 100, message || "阶段完成，等待确认");
+                updatePipelineProgress(phase, 100, message || (getPhaseDisplayName(phase) + " complete"));
                 showApprovalPanel(phase, data);
                 return;
             }
 
             if (status === "error") {
-                updatePipelineProgress(phase, 0, "错误: " + message.substring(0, 60));
-                throw new Error(message || "管道处理出错");
+                updatePipelineProgress(phase, 0, "Error: " + message.substring(0, 60));
+                throw new Error(message || t("errors.pipelineError"));
             }
 
             lastStatus = status;
         } catch (err) {
-            if (err.message && (err.message.includes("❌") || err.message.includes("失败") || err.message.includes("出错"))) {
-                alert("管道处理出错: " + err.message);
+            if (err.message && (err.message.includes("❌") || err.message.includes("fail") || err.message.includes("error"))) {
+                alert(t("errors.pipelineError") + ": " + err.message);
                 return;
             }
             console.warn("v3 管道轮询失败，重试中...", err.message);
         }
     }
 
-    alert("管道处理超时（超过 10 分钟）");
+    alert(t("errors.pipelineTimeout"));
 }
 
 // ---- v3 确认面板 ----
@@ -1176,15 +1779,15 @@ function showApprovalPanel(phase, data) {
     panel.style.display = "block";
 
     const phaseNames = {
-        "media_scan": "媒体扫描",
-        "material_review": "素材审查",
-        "story": "故事开发",
-        "blueprint": "剪辑蓝图",
-        "validate": "蓝图验证",
+        "media_scan": t("pipeline.phaseNames.media_scan"),
+        "material_review": t("pipeline.phaseNames.material_review"),
+        "story": t("pipeline.phaseNames.story"),
+        "blueprint": t("pipeline.phaseNames.blueprint"),
+        "validate": t("pipeline.phaseNames.validate"),
     };
 
     document.getElementById("approvalTitle").textContent =
-        (phaseNames[phase] || phase) + " 完成";
+        (phaseNames[phase] || phase) + " ✓";
 
     let summary = "";
     const review = document.getElementById("approvalReview");
@@ -1195,33 +1798,33 @@ function showApprovalPanel(phase, data) {
     switch (phase) {
         case "media_scan":
             const scan = data.scan_preview || {};
-            summary = `扫描了 ${scan.total_files || "?"} 个文件（${scan.duration_display || ""}）`;
+            summary = `Scanned ${scan.total_files || "?"} files (${scan.duration_display || ""})`;
             review.innerHTML = scan.files ? scan.files.map(f =>
                 `<div style="padding:4px 0;">${f.filename} (${f.size_mb}MB, ${f.duration}s)</div>`
             ).join("") : "<p>已生成 media-manifest.json</p>";
             break;
         case "material_review":
             const rv = data.review || {};
-            summary = `识别: ${rv.movie_name || "未知"} | 类型: ${rv.genre || ""} | 情绪: ${rv.mood || ""}`;
+            summary = `ID: ${rv.movie_name || "?"} | Genre: ${rv.genre || ""} | Mood: ${rv.mood || ""}`;
             review.innerHTML = `
-                <p><strong>分类:</strong> 动作强度=${rv.action_intensity || ""}, 情绪范围=${(rv.emotional_range || []).join(", ")}</p>
-                <p><strong>叙事用途:</strong> ${(rv.narrative_uses || []).join(", ")}</p>
+                <p><strong>Class:</strong> Action=${rv.action_intensity || ""}, Emotion=${(rv.emotional_range || []).join(", ")}</p>
+                <p><strong>Narrative:</strong> ${(rv.narrative_uses || []).join(", ")}</p>
             `;
             break;
         case "story":
             const st = data.story || {};
-            summary = st.core_idea || "故事开发完成";
+            summary = st.core_idea || t("pipeline.phaseNames.story") + " complete";
             review.innerHTML = `
-                <p><strong>核心创意:</strong> ${st.core_idea || ""}</p>
-                <p><strong>叙事结构:</strong> ${st.selected_structure || ""}</p>
-                <p><strong>情绪曲线:</strong> ${st.emotional_curve || ""}</p>
-                <p><strong>场景节拍:</strong> ${(st.scene_beats || []).length} 个</p>
+                <p><strong>Core Idea:</strong> ${st.core_idea || ""}</p>
+                <p><strong>Structure:</strong> ${st.selected_structure || ""}</p>
+                <p><strong>Emotional Curve:</strong> ${st.emotional_curve || ""}</p>
+                <p><strong>Scene Beats:</strong> ${(st.scene_beats || []).length}</p>
             `;
             document.getElementById("v3SkipBtn").style.display = "";  // 故事可跳过
             break;
         case "blueprint":
             const bp = data.blueprint || {};
-            summary = `${bp.total_clips || "?"} 个片段, ${bp.total_duration || "?"}s, 平均分 ${bp.avg_highlight_score || "?"}`;
+            summary = `${bp.total_clips || "?"} clips, ${bp.total_duration || "?"}s, avg score ${bp.avg_highlight_score || "?"}`;
             let viz = '<div class="mini-timeline">';
             (bp.clips || []).forEach(c => {
                 const toneColors = {
@@ -1234,18 +1837,18 @@ function showApprovalPanel(phase, data) {
             });
             viz += '</div>';
             review.innerHTML = viz +
-                '<p style="margin-top:8px;">情绪分布: ' + JSON.stringify(bp.emotional_tones || {}) + '</p>';
+                '<p style="margin-top:8px;">Tone distribution: ' + JSON.stringify(bp.emotional_tones || {}) + '</p>';
             break;
         case "validate":
             const val = data.validation || {};
             summary = val.summary || "";
             review.innerHTML = (val.issues || []).map(i =>
                 `<div style="padding:2px 0;color:${i.level === 'error' ? 'var(--error)' : 'var(--warning)'};">${i.level}: ${i.message}</div>`
-            ).join("") || "<p>验证通过</p>";
+            ).join("") || "<p>Validation passed</p>";
             break;
         default:
-            summary = "阶段完成";
-            review.innerHTML = "<p>准备进入下一阶段</p>";
+            summary = "Phase complete";
+            review.innerHTML = "<p>Ready for next phase</p>";
     }
 
     document.getElementById("approvalSummary").textContent = summary;
@@ -1271,7 +1874,7 @@ async function approvePhase() {
         await sleep(500);
         await pollV3Pipeline();
     } catch (err) {
-        alert("确认失败: " + err.message);
+        alert(t("errors.confirmFailed") + ": " + err.message);
         // 恢复面板以便重试
         document.getElementById("approvalPanel").style.display = "block";
     }
@@ -1290,7 +1893,7 @@ async function retryPhase() {
         await sleep(500);
         await pollV3Pipeline();
     } catch (err) {
-        alert("重试失败: " + err.message);
+        alert(t("errors.retryFailed") + ": " + err.message);
         document.getElementById("approvalPanel").style.display = "block";
     }
 }
@@ -1311,20 +1914,15 @@ async function skipPhase() {
         await sleep(500);
         await pollV3Pipeline();
     } catch (err) {
-        alert("跳过失败: " + err.message);
+        alert(t("errors.skipFailed") + ": " + err.message);
         document.getElementById("approvalPanel").style.display = "block";
     }
 }
 
 // ---- v3 管道步骤可视化 + 进度条 ----
-const phaseDisplayNames = {
-    "media_scan": "媒体扫描",
-    "material_review": "素材审查",
-    "story": "故事开发",
-    "blueprint": "剪辑蓝图",
-    "validate": "蓝图验证",
-    "build": "构建+审计",
-};
+function getPhaseDisplayName(phase) {
+    return t("pipeline.phaseNames." + phase) || phase;
+}
 
 function updatePipelineStep(phase, status) {
     const phaseMap = {
@@ -1342,7 +1940,7 @@ function updatePipelineStep(phase, status) {
 
     // 更新进度条上的阶段名称
     document.getElementById("pipelinePhaseName").textContent =
-        phaseDisplayNames[phase] || phase;
+        getPhaseDisplayName(phase);
 }
 
 function updatePipelineProgress(phase, progress, message) {
@@ -1358,7 +1956,7 @@ function updatePipelineProgress(phase, progress, message) {
     }
     // 更新阶段名
     document.getElementById("pipelinePhaseName").textContent =
-        phaseDisplayNames[phase] || phase;
+        getPhaseDisplayName(phase);
 
     // 运行时脉冲动画
     if (progress > 0 && progress < 100) {
@@ -1387,10 +1985,10 @@ function showV3Results(data) {
     if (data.draft_info) {
         const draft = data.draft_info;
         html += `<div class="result-card">
-            <h3>✂️ 剪映草稿已生成</h3>
-            <p>草稿: <strong>${draft.draft_name}</strong></p>
+            <h3>✂️ ${t("results.draftGenerated")}</h3>
+            <p>${t("results.draftName")}: <strong>${draft.draft_name}</strong></p>
             <p class="export-path-display">📁 ${data.export_path || ""}</p>
-            ${draft.capcut_draft_path ? '<p style="color:var(--success);">✅ 已同步到剪映目录</p>' : ''}
+            ${draft.capcut_draft_path ? '<p style="color:var(--success);">✅ ' + t("results.draftSynced") + '</p>' : ''}
         </div>`;
     }
 
@@ -1398,7 +1996,7 @@ function showV3Results(data) {
     if (data.audit) {
         const audit = data.audit;
         html += `<div class="result-card">
-            <h3>📊 审计报告</h3>
+            <h3>📊 ${t("results.auditReport")}</h3>
             <p>${audit.summary || ""}</p>
             ${(audit.issues || []).slice(0, 5).map(i =>
                 `<div style="color:${i.level === 'error' ? 'var(--error)' : 'var(--warning)'};font-size:0.85rem;">• ${i.message}</div>`
@@ -1410,14 +2008,404 @@ function showV3Results(data) {
     if (data.pickup) {
         const pu = data.pickup;
         html += `<div class="result-card">
-            <h3>📋 补拍建议</h3>
-            <p>P0(必须): ${pu.p0_count || 0} | P1(建议): ${pu.p1_count || 0} | P2(可选): ${pu.p2_count || 0}</p>
+            <h3>📋 ${t("results.pickupReport")}</h3>
+            <p>${t("results.pickupP0")}: ${pu.p0_count || 0} | ${t("results.pickupP1")}: ${pu.p1_count || 0} | ${t("results.pickupP2")}: ${pu.p2_count || 0}</p>
             ${(pu.p0_items || []).slice(0, 3).map(i =>
                 `<div style="font-size:0.85rem;margin-top:4px;">• <strong>${i.missing_info || ""}</strong>: ${i.shot_spec?.subject || ""}</div>`
             ).join("")}
         </div>`;
     }
 
-    document.getElementById("v3ResultContent").innerHTML = html || "<p>分析完成</p>";
+    document.getElementById("v3ResultContent").innerHTML = html || ("<p>" + t("results.analysisComplete") + "</p>");
     resultSection.scrollIntoView({ behavior: "smooth" });
 }
+
+// ============================================
+// 🎬 滚动揭示动画 (IntersectionObserver)
+// ============================================
+(function initScrollReveal() {
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add("visible");
+                observer.unobserve(entry.target);
+            }
+        });
+    }, {
+        threshold: 0.1,
+        rootMargin: "0px 0px -40px 0px",
+    });
+
+    document.querySelectorAll(".reveal").forEach(el => observer.observe(el));
+
+    // 动态元素：MutationObserver 监听新增的 .reveal 元素
+    const dynObserver = new MutationObserver((mutations) => {
+        mutations.forEach(m => {
+            m.addedNodes.forEach(node => {
+                if (node.nodeType === 1) {
+                    if (node.classList?.contains("reveal")) observer.observe(node);
+                    node.querySelectorAll?.(".reveal").forEach(el => observer.observe(el));
+                }
+            });
+        });
+    });
+    dynObserver.observe(document.body, { childList: true, subtree: true });
+})();
+
+// ============================================
+// 导航栏按钮（新版）+ v3 切换活跃状态
+// ============================================
+(function initNavButtons() {
+    const tutorialNavBtn = document.getElementById("tutorialNavBtn");
+    const updateNavBtn = document.getElementById("updateNavBtn");
+    const oldTutorialBtn = document.getElementById("tutorialBtn");
+    const oldUpdateBtn = document.getElementById("updateBtn");
+
+    if (tutorialNavBtn && oldTutorialBtn) {
+        tutorialNavBtn.addEventListener("click", () => oldTutorialBtn.click());
+    }
+    if (updateNavBtn && oldUpdateBtn) {
+        updateNavBtn.addEventListener("click", () => oldUpdateBtn.click());
+    }
+
+    // Language toggle
+    const langToggleBtn = document.getElementById("langToggleBtn");
+    if (langToggleBtn) {
+        langToggleBtn.addEventListener("click", () => {
+            I18N.switchLanguage();
+        });
+    }
+
+    // ---- 🎯 开始旅程：从 Hero 跳转到功能区域 ----
+    // 根据当前 V2/V3 模式滚动到正确的功能区
+    function scrollToFunctionalSection() {
+        const isV3 = document.getElementById("v3Content")?.style.display !== "none";
+        const target = isV3
+            ? document.getElementById("briefSection")
+            : document.getElementById("uploadSection");
+        if (target) {
+            target.scrollIntoView({ behavior: "smooth", block: "start" });
+        }
+        // 更新导航栏活跃状态：取消所有 link，高亮对应功能
+        document.querySelectorAll(".nav-links a").forEach(l => l.classList.remove("active"));
+        const navTarget = isV3
+            ? document.querySelector('.nav-links a[href="#briefSection"]')
+            : document.querySelector('.nav-links a[href="#uploadSection"]');
+        if (navTarget) navTarget.classList.add("active");
+    }
+
+    // 暴露到全局，供 HTML inline onclick 调用
+    window.scrollToFunctionalSection = scrollToFunctionalSection;
+
+    // Nav CTA: scroll to functional section
+    const navCTA = document.getElementById("navCTA");
+    if (navCTA) {
+        navCTA.addEventListener("click", () => scrollToFunctionalSection());
+    }
+
+    // Nav links: highlight active on click
+    document.querySelectorAll(".nav-links a").forEach(link => {
+        link.addEventListener("click", function() {
+            document.querySelectorAll(".nav-links a").forEach(l => l.classList.remove("active"));
+            this.classList.add("active");
+        });
+    });
+
+    // Suggestions nav button
+    const suggestionsNavBtn = document.getElementById("suggestionsNavBtn");
+    if (suggestionsNavBtn) {
+        suggestionsNavBtn.addEventListener("click", () => openSuggestions());
+    }
+})();
+
+// ============================================
+// 📬 意见箱
+// ============================================
+
+let adminKey = "";  // 管理员密钥（登录后设置）
+
+function isAdmin() { return !!adminKey; }
+
+function adminHeaders() {
+    return adminKey ? { "X-Admin-Key": adminKey } : {};
+}
+
+function openSuggestions() {
+    const modal = document.getElementById("suggestionsModal");
+    if (!modal) return;
+    modal.style.display = "flex";
+    updateAdminUI();
+    loadSuggestions();
+}
+
+function closeSuggestions() {
+    const modal = document.getElementById("suggestionsModal");
+    if (modal) modal.style.display = "none";
+}
+
+async function loadSuggestions() {
+    const list = document.getElementById("suggestionsList");
+    const total = document.getElementById("suggestionsTotal");
+    if (!list) return;
+
+    list.innerHTML = `<p class="suggestions-loading">${t("suggestions.loading")}</p>`;
+
+    try {
+        const url = isAdmin() ? "/api/suggestions?all=1" : "/api/suggestions";
+        const resp = await fetch(url, { headers: adminHeaders() });
+        const data = await resp.json();
+        const suggestions = data.suggestions || [];
+
+        if (total) total.textContent = `${data.total || 0} ${t("suggestions.total")}`;
+
+        if (suggestions.length === 0) {
+            list.innerHTML = `<p class="suggestions-empty">${t("suggestions.empty")}</p>`;
+            return;
+        }
+
+        list.innerHTML = suggestions.map(s => renderSuggestionItem(s)).join("");
+    } catch (err) {
+        list.innerHTML = `<p class="suggestions-error-msg">${t("suggestions.loadFailed")}: ${err.message}</p>`;
+    }
+}
+
+function renderSuggestionItem(s) {
+    const statusLabels = {
+        "pending": t("suggestions.statusPending"),
+        "in_progress": t("suggestions.statusInProgress"),
+        "completed": t("suggestions.statusCompleted"),
+    };
+    const status = s.status || "pending";
+    const statusLabel = statusLabels[status] || status;
+    const hidden = s.hidden || false;
+
+    let adminControls = "";
+    if (isAdmin()) {
+        const statusOptions = ["pending", "in_progress", "completed"].map(st => {
+            const sel = st === status ? " selected" : "";
+            return `<option value="${st}"${sel}>${statusLabels[st]}</option>`;
+        }).join("");
+
+        adminControls = `
+        <div class="suggestion-admin-controls">
+            <select class="suggestion-status-select" data-sid="${s.id}" onchange="updateSuggestionStatus('${s.id}', this.value)">
+                ${statusOptions}
+            </select>
+            ${hidden ? `
+                <button class="btn-xs btn-restore" onclick="restoreSuggestion('${s.id}')" title="${t("suggestions.restore")}">↩ ${t("suggestions.restore")}</button>
+            ` : `
+                <button class="btn-xs btn-delete" onclick="deleteSuggestion('${s.id}')" title="${t("suggestions.delete")}">✕ ${t("suggestions.delete")}</button>
+            `}
+        </div>`;
+    }
+
+    const visibility = s.visibility || "public";
+    const hiddenBadge = hidden ? `<span class="suggestion-badge-hidden">${t("suggestions.hidden")}</span>` : "";
+    const privBadge = visibility === "private"
+        ? `<span class="suggestion-badge-private">${t("suggestions.visibilityPrivateBadge")}</span>`
+        : "";
+
+    return `
+        <div class="suggestion-item${hidden ? " suggestion-hidden" : ""}${visibility === "private" ? " suggestion-private" : ""}">
+            <div class="suggestion-item-header">
+                <div class="suggestion-item-left">
+                    <span class="suggestion-nickname">${escapeHTML(s.nickname)}</span>
+                    <span class="suggestion-status-badge status-${status}">${statusLabel}</span>
+                    ${privBadge}
+                    ${hiddenBadge}
+                </div>
+                <span class="suggestion-time">${escapeHTML(s.created_at || "")}</span>
+            </div>
+            <p class="suggestion-content">${escapeHTML(s.content)}</p>
+            ${adminControls}
+        </div>
+    `;
+}
+
+async function submitSuggestion() {
+    const nicknameEl = document.getElementById("suggestionsNickname");
+    const contentEl = document.getElementById("suggestionsContent");
+    const errorEl = document.getElementById("suggestionsError");
+    const submitBtn = document.getElementById("suggestionsSubmitBtn");
+
+    const nickname = nicknameEl?.value.trim() || "";
+    const content = contentEl?.value.trim() || "";
+
+    if (!nickname) {
+        showSuggestionsError(t("suggestions.nicknameRequired"));
+        return;
+    }
+    if (!content) {
+        showSuggestionsError(t("suggestions.contentRequired"));
+        return;
+    }
+
+    if (submitBtn) submitBtn.disabled = true;
+    if (errorEl) errorEl.style.display = "none";
+
+    const visEl = document.querySelector('input[name="suggestionsVisibility"]:checked');
+    const visibility = visEl ? visEl.value : "public";
+
+    try {
+        const resp = await fetch("/api/suggestions", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ nickname, content, visibility }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) throw new Error(data.error || "Submit failed");
+
+        if (nicknameEl) nicknameEl.value = "";
+        if (contentEl) { contentEl.value = ""; updateSuggestionsCharCount(); }
+
+        await loadSuggestions();
+    } catch (err) {
+        showSuggestionsError(err.message);
+    } finally {
+        if (submitBtn) submitBtn.disabled = false;
+    }
+}
+
+async function deleteSuggestion(sid) {
+    if (!confirm(t("suggestions.confirmDelete") || "Confirm delete?")) return;
+    try {
+        const resp = await fetch(`/api/suggestions/${sid}`, {
+            method: "DELETE",
+            headers: adminHeaders(),
+        });
+        if (!resp.ok) { const d = await resp.json(); throw new Error(d.error); }
+        await loadSuggestions();
+    } catch (err) {
+        alert(err.message);
+    }
+}
+
+async function restoreSuggestion(sid) {
+    try {
+        const resp = await fetch(`/api/suggestions/${sid}/restore`, {
+            method: "POST",
+            headers: adminHeaders(),
+        });
+        if (!resp.ok) { const d = await resp.json(); throw new Error(d.error); }
+        await loadSuggestions();
+    } catch (err) {
+        alert(err.message);
+    }
+}
+
+async function updateSuggestionStatus(sid, newStatus) {
+    try {
+        const resp = await fetch(`/api/suggestions/${sid}/status`, {
+            method: "PUT",
+            headers: { ...adminHeaders(), "Content-Type": "application/json" },
+            body: JSON.stringify({ status: newStatus }),
+        });
+        if (!resp.ok) { const d = await resp.json(); throw new Error(d.error); }
+        // 不重新加载列表，只更新徽章颜色
+        const badge = document.querySelector(`.suggestion-status-badge[data-sid="${sid}"]`);
+        if (badge) {
+            badge.className = `suggestion-status-badge status-${newStatus}`;
+            const labels = {
+                "pending": t("suggestions.statusPending"),
+                "in_progress": t("suggestions.statusInProgress"),
+                "completed": t("suggestions.statusCompleted"),
+            };
+            badge.textContent = labels[newStatus] || newStatus;
+        }
+    } catch (err) {
+        alert(err.message);
+    }
+}
+
+function adminLogin() {
+    const key = prompt(t("suggestions.adminPrompt") || "Enter admin key:");
+    if (key !== null && key.trim()) {
+        adminKey = key.trim();
+        updateAdminUI();
+        loadSuggestions();
+    }
+}
+
+function adminLogout() {
+    adminKey = "";
+    updateAdminUI();
+    loadSuggestions();
+}
+
+function updateAdminUI() {
+    const loginBtn = document.getElementById("suggestionsAdminBtn");
+    const adminBar = document.getElementById("suggestionsAdminBar");
+    if (loginBtn) {
+        loginBtn.textContent = isAdmin() ? t("suggestions.adminLogout") : t("suggestions.adminLogin");
+        loginBtn.className = isAdmin() ? "btn-secondary btn-xs" : "btn-primary btn-xs";
+    }
+    if (adminBar) {
+        adminBar.style.display = isAdmin() ? "flex" : "none";
+    }
+}
+
+function showSuggestionsError(msg) {
+    const errorEl = document.getElementById("suggestionsError");
+    if (errorEl) {
+        errorEl.textContent = msg;
+        errorEl.style.display = "block";
+        setTimeout(() => { errorEl.style.display = "none"; }, 4000);
+    }
+}
+
+function updateSuggestionsCharCount() {
+    const contentEl = document.getElementById("suggestionsContent");
+    const countEl = document.getElementById("suggestionsCharCount");
+    if (contentEl && countEl) {
+        countEl.textContent = `${contentEl.value.length}/2000`;
+    }
+}
+
+function escapeHTML(str) {
+    const div = document.createElement("div");
+    div.textContent = str || "";
+    return div.innerHTML;
+}
+
+// ---- 意见箱事件绑定 ----
+(function initSuggestions() {
+    const modal = document.getElementById("suggestionsModal");
+    if (!modal) return;
+
+    const closeBtn = document.getElementById("suggestionsClose");
+    if (closeBtn) closeBtn.addEventListener("click", closeSuggestions);
+
+    modal.addEventListener("click", (e) => {
+        if (e.target === modal) closeSuggestions();
+    });
+
+    document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape" && modal.style.display === "flex") {
+            closeSuggestions();
+        }
+    });
+
+    const submitBtn = document.getElementById("suggestionsSubmitBtn");
+    if (submitBtn) submitBtn.addEventListener("click", submitSuggestion);
+
+    const refreshBtn = document.getElementById("suggestionsRefreshBtn");
+    if (refreshBtn) refreshBtn.addEventListener("click", loadSuggestions);
+
+    const adminBtn = document.getElementById("suggestionsAdminBtn");
+    if (adminBtn) {
+        adminBtn.addEventListener("click", () => {
+            if (isAdmin()) adminLogout(); else adminLogin();
+        });
+    }
+
+    const contentEl = document.getElementById("suggestionsContent");
+    if (contentEl) {
+        contentEl.addEventListener("input", updateSuggestionsCharCount);
+        contentEl.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                submitSuggestion();
+            }
+        });
+    }
+})();

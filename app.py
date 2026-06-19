@@ -14,6 +14,11 @@ import re
 import json
 import threading
 import time
+import urllib.request
+import urllib.error
+import urllib.parse
+import tempfile
+import mimetypes
 
 # Force UTF-8 encoding for stdout/stderr on Windows
 if sys.platform == "win32":
@@ -552,26 +557,31 @@ def upload():
     mode = request.form.get("mode", "manual")  # "manual" | "ai"
 
     # 检查视频文件
-    if "video" not in request.files:
-        return jsonify({"error": "请上传电影素材（视频文件）"}), 400
-
-    video_file = request.files["video"]
-    if video_file.filename == "":
-        return jsonify({"error": "请选择视频文件"}), 400
-
-    if not allowed_file(video_file.filename, config.ALLOWED_VIDEO_EXTENSIONS):
-        return jsonify({
-            "error": f"不支持的视频格式。支持: {', '.join(config.ALLOWED_VIDEO_EXTENSIONS)}"
-        }), 400
+    video_server_path = request.form.get("video_server_path", "").strip()
+    video_filename_override = request.form.get("video_filename", "").strip()
 
     # 创建任务目录
     task_dir = os.path.join(config.UPLOAD_FOLDER, task_id)
     os.makedirs(task_dir, exist_ok=True)
 
-    # 保存视频
-    video_filename = video_file.filename
-    video_path = os.path.join(task_dir, video_filename)
-    video_file.save(video_path)
+    # 视频来源：优先使用服务器上已有的路径（URL下载），否则保存上传文件
+    if video_server_path and os.path.isfile(video_server_path):
+        video_filename = video_filename_override or os.path.basename(video_server_path)
+        video_path = video_server_path  # 直接使用已有文件
+        print(f"[Upload] 使用已下载视频: {video_path}")
+    else:
+        if "video" not in request.files:
+            return jsonify({"error": "请上传电影素材（视频文件）"}), 400
+        video_file = request.files["video"]
+        if video_file.filename == "":
+            return jsonify({"error": "请选择视频文件"}), 400
+        if not allowed_file(video_file.filename, config.ALLOWED_VIDEO_EXTENSIONS):
+            return jsonify({
+                "error": f"不支持的视频格式。支持: {', '.join(config.ALLOWED_VIDEO_EXTENSIONS)}"
+            }), 400
+        video_filename = video_file.filename
+        video_path = os.path.join(task_dir, video_filename)
+        video_file.save(video_path)
 
     # ---- AI 模式：只上传视频，稍后 AI 生成音乐 ----
     if mode == "ai":
@@ -609,6 +619,18 @@ def upload():
 
     # 保存所有音频
     audio_paths = []
+    audio_server_paths = request.form.get("audio_server_paths", "").strip()
+    audio_filenames_list = request.form.get("audio_filenames_list", "").strip()
+
+    # 优先使用服务器已有的音频路径
+    if audio_server_paths:
+        for p in audio_server_paths.split(","):
+            p = p.strip()
+            if p and os.path.isfile(p):
+                audio_paths.append(p)
+                print(f"[Upload] 使用已下载音频: {p}")
+
+    # 也处理直接上传的音频文件
     for audio_file in audio_files:
         if audio_file.filename == "":
             continue
@@ -928,6 +950,190 @@ def health():
 
 
 # ============================================
+# URL 上传 — 从社交媒体 / 链接下载素材
+# ============================================
+
+# 常见社交媒体域名识别
+SOCIAL_MEDIA_DOMAINS = {
+    "weixin.qq.com": "微信",
+    "wechat.com": "微信",
+    "pan.baidu.com": "百度网盘",
+    "bilibili.com": "B站",
+    "b23.tv": "B站",
+    "youtube.com": "YouTube",
+    "youtu.be": "YouTube",
+    "douyin.com": "抖音",
+    "tiktok.com": "TikTok",
+    "xiaohongshu.com": "小红书",
+    "xhslink.com": "小红书",
+    "kuaishou.com": "快手",
+    "weibo.com": "微博",
+    "qq.com": "QQ",
+    "v.qq.com": "腾讯视频",
+    "iqiyi.com": "爱奇艺",
+    "youku.com": "优酷",
+    "mg.tv": "芒果TV",
+    "drive.google.com": "Google Drive",
+    "dropbox.com": "Dropbox",
+}
+
+def _detect_platform(url: str) -> str:
+    """识别 URL 来自哪个平台"""
+    try:
+        parsed = urllib.parse.urlparse(url)
+        host = parsed.netloc.lower()
+        if host.startswith("www."):
+            host = host[4:]
+        for domain, name in SOCIAL_MEDIA_DOMAINS.items():
+            if domain in host:
+                return name
+    except Exception:
+        pass
+    return "URL"
+
+
+def _is_media_url(url: str) -> bool:
+    """检查 URL 是否直接指向媒体文件"""
+    ext = os.path.splitext(urllib.parse.urlparse(url).path)[1].lower()
+    return ext in config.ALLOWED_VIDEO_EXTENSIONS or ext in config.ALLOWED_AUDIO_EXTENSIONS
+
+
+@app.route("/api/upload/url", methods=["POST"])
+def api_upload_url():
+    """从 URL 下载视频/音频素材"""
+    data = request.get_json() if request.is_json else {}
+    url = (data.get("url") or "").strip()
+
+    if not url:
+        return jsonify({"error": "请提供媒体文件链接"}), 400
+
+    # 验证 URL
+    if not url.startswith(("http://", "https://")):
+        return jsonify({"error": "仅支持 http/https 链接"}), 400
+
+    media_type = data.get("type", "auto")  # "video" | "audio" | "auto"
+    project_slug = data.get("project_slug", "").strip()
+
+    platform = _detect_platform(url)
+    print(f"[URL Upload] 检测到平台: {platform}, URL: {url[:80]}...")
+
+    # 创建临时任务目录
+    task_id = str(uuid.uuid4())[:12]
+    task_dir = os.path.join(config.UPLOAD_FOLDER, task_id)
+    os.makedirs(task_dir, exist_ok=True)
+
+    try:
+        # 设置 User-Agent 避免被拒绝
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                          "(KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+            "Accept": "*/*",
+        })
+
+        print(f"[URL Upload] 开始下载: {url[:100]}...")
+        with urllib.request.urlopen(req, timeout=60) as response:
+            content_type = response.headers.get("Content-Type", "")
+            content_disposition = response.headers.get("Content-Disposition", "")
+            content_length = response.headers.get("Content-Length", "")
+
+            # 确定文件名
+            filename = None
+            # 优先从 Content-Disposition 提取
+            if "filename=" in content_disposition:
+                import re as _re
+                match = _re.search(r'filename[^;=\n]*=["\']?([^"\';\n]*)', content_disposition)
+                if match:
+                    filename = match.group(1).strip()
+
+            if not filename:
+                # 从 URL 路径提取
+                parsed_path = urllib.parse.urlparse(url).path
+                filename = os.path.basename(parsed_path)
+                if not filename or "." not in filename:
+                    # 根据 content-type 推断扩展名
+                    ext = mimetypes.guess_extension(content_type.split(";")[0].strip())
+                    if not ext:
+                        ext = ".mp4" if media_type == "video" else ".mp3"
+                    filename = f"download_{task_id}{ext}"
+
+            # 安全检查：确保文件名安全
+            filename = "".join(c for c in filename if c.isascii() and c not in r'<>:"/\|?*')
+            if not filename:
+                filename = f"download_{task_id}.mp4"
+
+            # 检查文件大小
+            size_mb = 0
+            if content_length:
+                size_mb = int(content_length) / (1024 * 1024)
+
+            max_mb = config.MAX_VIDEO_SIZE_MB if media_type == "video" else config.MAX_AUDIO_SIZE_MB
+            if size_mb > max_mb:
+                return jsonify({
+                    "error": f"文件过大 ({size_mb:.0f}MB)，上限 {max_mb}MB"
+                }), 413
+
+            # 下载文件
+            file_path = os.path.join(task_dir, filename)
+            downloaded = 0
+            with open(file_path, "wb") as f:
+                while True:
+                    chunk = response.read(8192)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    # 进度保护：超过上限则中止
+                    if downloaded > max_mb * 1024 * 1024 + 10 * 1024 * 1024:
+                        f.close()
+                        os.unlink(file_path)
+                        return jsonify({"error": f"文件实际大小超过上限 {max_mb}MB"}), 413
+
+            actual_mb = downloaded / (1024 * 1024)
+            print(f"[URL Upload] 下载完成: {filename} ({actual_mb:.1f}MB)")
+
+            # 检测实际文件类型
+            ext = os.path.splitext(filename)[1].lower()
+            determined_type = media_type
+            if determined_type == "auto":
+                if ext in config.ALLOWED_VIDEO_EXTENSIONS:
+                    determined_type = "video"
+                elif ext in config.ALLOWED_AUDIO_EXTENSIONS:
+                    determined_type = "audio"
+                else:
+                    # 尝试用 ffprobe 探测
+                    try:
+                        from modules.frame_extractor import get_video_info
+                        probe = get_video_info(file_path)
+                        determined_type = "video" if probe.get("width", 0) > 0 else "audio"
+                    except Exception:
+                        determined_type = "video" if ext in {".mp4", ".mov", ".avi", ".mkv"} else "audio"
+
+            return jsonify({
+                "task_id": task_id,
+                "type": determined_type,
+                "filename": filename,
+                "file_path": file_path,
+                "size_mb": round(actual_mb, 1),
+                "platform": platform,
+                "message": f"✅ 从{platform}下载完成: {filename} ({actual_mb:.1f}MB)",
+            })
+
+    except urllib.error.HTTPError as e:
+        return jsonify({
+            "error": f"下载失败 (HTTP {e.code}): 链接可能已过期或需要权限"
+        }), 502
+    except urllib.error.URLError as e:
+        return jsonify({
+            "error": f"无法连接到服务器: {str(e.reason)}"
+        }), 502
+    except Exception as e:
+        print(f"[URL Upload] 错误: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": f"下载失败: {str(e)}"}), 500
+
+
+# ============================================
 # v3.0 管道阶段处理函数
 # ============================================
 
@@ -1240,6 +1446,13 @@ def run_build(task_id: str):
         match_result = audio_features[0] if audio_features else {}
         match_result["file_path"] = audio_path
 
+        # 获取简报参数
+        brief = task.get("brief", {})
+        project_name = brief.get("topic", "") or brief.get("project_name", "")
+        platform = brief.get("platform", "jianying")
+        aspect_ratio = brief.get("aspect_ratio", "16:9")
+        target_duration = brief.get("target_duration_seconds", 0)
+
         # 生成草稿
         from modules.draft_generator import create_draft as gen_draft
         draft_info = gen_draft(
@@ -1251,6 +1464,10 @@ def run_build(task_id: str):
             smart_segments=smart_segments if smart_segments else None,
             editing_mode=editing_mode if smart_segments else None,
             custom_output_dir=custom_output if custom_output else None,
+            project_name=project_name,
+            platform=platform,
+            aspect_ratio=aspect_ratio,
+            target_duration=target_duration,
         )
         task["draft_info"] = draft_info
 
@@ -1357,11 +1574,17 @@ def api_create_brief():
             "project_slug": brief.get("project_slug", ""),
         }
 
+        prefs = brief.get("editing_preferences", {})
+        prefs_summary = prefs.get("summary", "")
+        ai_interp = prefs.get("ai_interpretation", "")
+
         return jsonify({
             "task_id": task_id,
             "project_slug": brief.get("project_slug", ""),
             "brief": brief_to_display(brief),
             "message": "简报已创建，请上传素材",
+            "preferences_summary": prefs_summary,
+            "ai_interpretation": ai_interp,
         })
 
     except ValueError as e:
@@ -1379,29 +1602,45 @@ def api_upload_v3():
         return jsonify({"error": "请先创建项目简报（project_slug 不能为空）"}), 400
 
     # 检查 video 文件
-    if "video" not in request.files:
-        return jsonify({"error": "请上传视频文件"}), 400
-
-    video_file = request.files["video"]
-    if video_file.filename == "":
-        return jsonify({"error": "请选择视频文件"}), 400
-
-    if not allowed_file(video_file.filename, config.ALLOWED_VIDEO_EXTENSIONS):
-        return jsonify({
-            "error": f"不支持的视频格式。支持: {', '.join(config.ALLOWED_VIDEO_EXTENSIONS)}"
-        }), 400
+    video_server_path = request.form.get("video_server_path", "").strip()
+    video_filename_override = request.form.get("video_filename", "").strip()
 
     # 创建任务目录
     task_dir = os.path.join(config.UPLOAD_FOLDER, project_slug)
     os.makedirs(task_dir, exist_ok=True)
 
-    # 保存视频
-    video_filename = video_file.filename
-    video_path = os.path.join(task_dir, video_filename)
-    video_file.save(video_path)
+    # 视频来源：优先使用服务器上已有的路径（URL下载），否则保存上传文件
+    if video_server_path and os.path.isfile(video_server_path):
+        video_filename = video_filename_override or os.path.basename(video_server_path)
+        video_path = video_server_path  # 直接使用已有文件
+        print(f"[V3 Upload] 使用已下载视频: {video_path}")
+    else:
+        if "video" not in request.files:
+            return jsonify({"error": "请上传视频文件"}), 400
+        video_file = request.files["video"]
+        if video_file.filename == "":
+            return jsonify({"error": "请选择视频文件"}), 400
+        if not allowed_file(video_file.filename, config.ALLOWED_VIDEO_EXTENSIONS):
+            return jsonify({
+                "error": f"不支持的视频格式。支持: {', '.join(config.ALLOWED_VIDEO_EXTENSIONS)}"
+            }), 400
+        video_filename = video_file.filename
+        video_path = os.path.join(task_dir, video_filename)
+        video_file.save(video_path)
 
     # 保存音频
     audio_paths = []
+    audio_server_paths = request.form.get("audio_server_paths", "").strip()
+
+    # 优先使用服务器已有的音频路径
+    if audio_server_paths:
+        for p in audio_server_paths.split(","):
+            p = p.strip()
+            if p and os.path.isfile(p):
+                audio_paths.append(p)
+                print(f"[V3 Upload] 使用已下载音频: {p}")
+
+    # 也处理直接上传的音频文件
     audio_files = request.files.getlist("audio")
     for audio_file in audio_files:
         if audio_file.filename == "":
@@ -1606,6 +1845,151 @@ def api_get_artifact(project_slug: str, phase: str):
 # ============================================
 # 启动
 # ============================================
+
+# ============================================
+# 📬 意见箱 API
+# ============================================
+import threading
+_suggestions_lock = threading.Lock()
+SUGGESTIONS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "workspace", "suggestions.json")
+
+
+def _load_suggestions() -> list[dict]:
+    """加载所有意见"""
+    if not os.path.exists(SUGGESTIONS_FILE):
+        return []
+    try:
+        with open(SUGGESTIONS_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return []
+
+
+def _save_suggestions(suggestions: list[dict]):
+    """保存所有意见"""
+    os.makedirs(os.path.dirname(SUGGESTIONS_FILE), exist_ok=True)
+    with open(SUGGESTIONS_FILE, "w", encoding="utf-8") as f:
+        json.dump(suggestions, f, ensure_ascii=False, indent=2)
+
+
+def _check_admin() -> bool:
+    """验证管理员密钥"""
+    if not config.ADMIN_KEY:  # 未配置密钥时禁用管理功能
+        return False
+    key = request.headers.get("X-Admin-Key", "") or request.args.get("admin_key", "")
+    return bool(key) and key == config.ADMIN_KEY
+
+
+@app.route("/api/suggestions", methods=["GET"])
+def api_get_suggestions():
+    """获取建议（管理员可查看全部含已隐藏+私密；普通用户仅看公开未隐藏）"""
+    is_admin = _check_admin()
+    show_all = is_admin and request.args.get("all") == "1"
+    with _suggestions_lock:
+        suggestions = _load_suggestions()
+    if not show_all:
+        suggestions = [
+            s for s in suggestions
+            if not s.get("hidden", False)  # 未隐藏
+            and (s.get("visibility", "public") == "public" or is_admin)  # 公开 或 管理员可见私密
+        ]
+    return jsonify({"suggestions": suggestions, "total": len(suggestions)})
+
+
+@app.route("/api/suggestions", methods=["POST"])
+def api_post_suggestion():
+    """提交新建议"""
+    data = request.get_json() if request.is_json else {}
+    nickname = (data.get("nickname", "") or "").strip()
+    content = (data.get("content", "") or "").strip()
+    visibility = (data.get("visibility", "") or "").strip()
+
+    if visibility not in ("public", "private"):
+        visibility = "public"
+
+    if not nickname:
+        return jsonify({"error": "请填写昵称"}), 400
+    if not content:
+        return jsonify({"error": "请填写意见内容"}), 400
+    if len(content) > 2000:
+        return jsonify({"error": "内容不能超过 2000 字"}), 400
+    if len(nickname) > 50:
+        return jsonify({"error": "昵称不能超过 50 字"}), 400
+
+    import time as _time
+    suggestion = {
+        "id": str(uuid.uuid4())[:8],
+        "nickname": nickname,
+        "content": content,
+        "visibility": visibility,  # public | private
+        "status": "pending",
+        "hidden": False,
+        "created_at": _time.strftime("%Y-%m-%d %H:%M UTC", _time.gmtime()),
+    }
+
+    with _suggestions_lock:
+        suggestions = _load_suggestions()
+        suggestions.insert(0, suggestion)
+        _save_suggestions(suggestions)
+
+    return jsonify({"suggestion": suggestion, "total": len(suggestions)}), 201
+
+
+@app.route("/api/suggestions/<sid>", methods=["DELETE"])
+def api_delete_suggestion(sid: str):
+    """删除/隐藏建议（仅管理员）"""
+    if not _check_admin():
+        return jsonify({"error": "需要管理员权限"}), 403
+
+    with _suggestions_lock:
+        suggestions = _load_suggestions()
+        for s in suggestions:
+            if s.get("id") == sid:
+                s["hidden"] = True
+                s["hidden_at"] = __import__("time").strftime("%Y-%m-%d %H:%M UTC", __import__("time").gmtime())
+                _save_suggestions(suggestions)
+                return jsonify({"success": True, "suggestion": s})
+    return jsonify({"error": "建议不存在"}), 404
+
+
+@app.route("/api/suggestions/<sid>/restore", methods=["POST"])
+def api_restore_suggestion(sid: str):
+    """保留/恢复建议（仅管理员）"""
+    if not _check_admin():
+        return jsonify({"error": "需要管理员权限"}), 403
+
+    with _suggestions_lock:
+        suggestions = _load_suggestions()
+        for s in suggestions:
+            if s.get("id") == sid:
+                s["hidden"] = False
+                s.pop("hidden_at", None)
+                _save_suggestions(suggestions)
+                return jsonify({"success": True, "suggestion": s})
+    return jsonify({"error": "建议不存在"}), 404
+
+
+@app.route("/api/suggestions/<sid>/status", methods=["PUT"])
+def api_update_suggestion_status(sid: str):
+    """更新建议状态（仅管理员）"""
+    if not _check_admin():
+        return jsonify({"error": "需要管理员权限"}), 403
+
+    data = request.get_json() if request.is_json else {}
+    new_status = (data.get("status", "") or "").strip()
+
+    if new_status not in ("pending", "in_progress", "completed"):
+        return jsonify({"error": "无效状态，可选: pending, in_progress, completed"}), 400
+
+    with _suggestions_lock:
+        suggestions = _load_suggestions()
+        for s in suggestions:
+            if s.get("id") == sid:
+                s["status"] = new_status
+                _save_suggestions(suggestions)
+                return jsonify({"success": True, "suggestion": s})
+    return jsonify({"error": "建议不存在"}), 404
+
 
 if __name__ == "__main__":
     # Render.com 自动设置 $PORT，本地用 FLASK_PORT 或默认 5000

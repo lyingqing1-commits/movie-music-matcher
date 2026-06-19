@@ -444,7 +444,7 @@ def _signal_only_structure(
             "end_time": round(duration, 1),
             "duration": round(duration, 1),
             "energy_level": 0.5,
-            "character": "整曲（未能分段）",
+            "character": "Full track (unsegmented)",
         }]
 
     print(f"   ✅ 信号分析: {len(sections)} 个段落")
@@ -467,7 +467,7 @@ def _detect_key_moments(sections: list[dict], duration: float) -> list[dict]:
             if s.get("energy_level", 0) >= 0.6:
                 moments.append({
                     "time": s["start_time"],
-                    "label": f"{s['section']} 开始",
+                    "label": f"{s['section'].title()} begins",
                     "energy": s.get("energy_level", 0.5),
                 })
 

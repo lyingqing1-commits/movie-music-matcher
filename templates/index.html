@@ -1,476 +1,611 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="zh-CN" id="htmlRoot">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎬 Movie Music Matcher - 电影音乐智能匹配</title>
+    <title>Movie Music Matcher — Cinematic AI Editing</title>
     <link rel="stylesheet" href="/static/style.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><text y='28' font-size='28'>🎬</text></svg>">
 </head>
 <body>
-    <div class="container">
 
-        <!-- 使用教程按钮（中心左侧偏上） -->
-        <button id="tutorialBtn" class="tutorial-btn" title="使用教程">📖<span class="tutorial-label">教程</span></button>
+    <!-- ============================================ -->
+    <!-- FULLSCREEN BACKGROUND VIDEO -->
+    <!-- ============================================ -->
+    <div class="bg-video-container">
+        <video autoplay loop muted playsinline>
+            <source src="https://d8j0ntlcm91z4.cloudfront.net/user_38xzZboKViGWJOttwIXH07lWA1P/hf_20260314_131748_f2ca2a28-fed7-44c8-b9a9-bd9acdd5ec31.mp4" type="video/mp4">
+        </video>
+        <div class="bg-video-overlay"></div>
+    </div>
 
-        <!-- 检查更新按钮 -->
-        <button id="updateBtn" class="update-btn" title="检查更新">🔄<span class="update-label">更新</span></button>
-
-        <!-- 教程弹窗 -->
-        <div class="modal-overlay" id="tutorialModal" style="display:none;">
-            <div class="modal-content tutorial-modal-content">
-                <button class="modal-close" id="tutorialClose">&times;</button>
-                <h2>📖 使用教程</h2>
-                <div class="tutorial-body" id="tutorialContent">
-                    <p style="color:var(--text-secondary)">加载中...</p>
-                </div>
-                <div class="tutorial-footer">
-                    <span class="tutorial-edit-hint">✏️ 编辑教程：桌面 → MovieMusicMatcher_教程.md</span>
-                </div>
+    <!-- ============================================ -->
+    <!-- NAVIGATION -->
+    <!-- ============================================ -->
+    <nav>
+        <div class="nav-inner">
+            <a href="/" class="nav-logo">MovieMusic<sup>&reg;</sup></a>
+            <div class="nav-links">
+                <a href="/" class="active" data-i18n="nav.home">Home</a>
+                <a href="#uploadSection" data-i18n="nav.upload">Upload</a>
+                <a href="#editingModeSection" data-i18n="nav.mode">Mode</a>
+                <button id="tutorialNavBtn" data-i18n="nav.tutorial">Tutorial</button>
+                <button id="updateNavBtn" data-i18n="nav.update">Update</button>
+                <button id="suggestionsNavBtn" data-i18n="nav.suggestions">Suggestions</button>
+                <!-- Language Switcher -->
+                <button id="langToggleBtn" class="lang-toggle-btn liquid-glass" title="Switch Language / 切换语言">
+                    <span id="langToggleLabel">EN</span>
+                </button>
+                <button id="navCTA" class="nav-cta liquid-glass" data-i18n="nav.beginJourney"
+                        onclick="scrollToFunctionalSection()">
+                    Begin Journey
+                </button>
             </div>
         </div>
+    </nav>
 
-        <!-- 检查更新弹窗 -->
-        <div class="modal-overlay" id="updateModal" style="display:none;">
-            <div class="modal-content update-modal-content">
-                <button class="modal-close" id="updateClose">&times;</button>
-                <h2>🔄 检查更新</h2>
-
-                <!-- 当前版本信息 -->
-                <div class="update-info-card">
-                    <div class="update-info-row">
-                        <span class="update-info-label">📦 当前应用版本</span>
-                        <span class="update-info-value" id="updateAppVersion">—</span>
-                    </div>
-                    <div class="update-info-row">
-                        <span class="update-info-label">📝 版本说明</span>
-                        <span class="update-info-desc" id="updateAppDesc">—</span>
-                    </div>
-                </div>
-
-                <!-- 编辑器版本信息 -->
-                <div class="update-info-card">
-                    <div class="update-info-row">
-                        <span class="update-info-label">✂️ 已安装编辑器</span>
-                        <span class="update-info-value" id="updateEditorName">—</span>
-                    </div>
-                    <div class="update-info-row">
-                        <span class="update-info-label">🔢 编辑器版本</span>
-                        <span class="update-info-value" id="updateEditorVersion">—</span>
-                    </div>
-                    <div class="update-info-row">
-                        <span class="update-info-label">🔗 兼容状态</span>
-                        <span id="updateCompatStatus">—</span>
-                    </div>
-                </div>
-
-                <!-- 兼容性范围 -->
-                <div class="update-info-card">
-                    <div class="update-info-row">
-                        <span class="update-info-label">🎬 兼容剪映版本</span>
-                        <span class="update-info-value" id="updateJypRange">—</span>
-                    </div>
-                    <div class="update-info-row">
-                        <span class="update-info-label">🌍 兼容 CapCut 版本</span>
-                        <span class="update-info-value" id="updateCapcutRange">—</span>
-                    </div>
-                </div>
-
-                <!-- 更新可用提示 -->
-                <div class="update-available-section" id="updateAvailableSection" style="display:none;">
-                    <div class="update-available-banner">
-                        🎉 有新版本可用！
-                    </div>
-                    <div class="update-info-card">
-                        <div class="update-info-row">
-                            <span class="update-info-label">🆕 最新版本</span>
-                            <span class="update-info-value" id="updateLatestVersion">—</span>
-                        </div>
-                        <div class="update-info-row">
-                            <span class="update-info-label">📝 更新内容</span>
-                            <span class="update-info-desc" id="updateLatestDesc">—</span>
-                        </div>
-                        <div class="update-info-row">
-                            <span class="update-info-label">🎬 兼容剪映</span>
-                            <span class="update-info-value" id="updateLatestJyp">—</span>
-                        </div>
-                        <div class="update-info-row" id="updateMethodRow" style="display:none;">
-                            <span class="update-info-label">⚡ 更新方式</span>
-                            <span class="update-info-value" id="updateMethod">—</span>
-                        </div>
-                    </div>
-
-                    <!-- Git 状态提示 -->
-                    <div class="update-git-info" id="updateGitInfo" style="display:none;">
-                        <div class="update-git-badge" id="updateGitBadge"></div>
-                        <div class="update-git-detail" id="updateGitDetail"></div>
-                    </div>
-
-                    <div class="action-bar">
-                        <button id="startUpdateBtn" class="btn-primary">
-                            🚀 开始更新
-                        </button>
-                    </div>
-                </div>
-
-                <!-- 更新进度 -->
-                <div class="update-progress-section" id="updateProgressSection" style="display:none;">
-                    <div class="progress-bar-container">
-                        <div class="progress-bar" id="updateProgressBar"></div>
-                    </div>
-                    <p class="progress-text" id="updateProgressText">准备更新...</p>
-                    <p class="progress-percent" id="updateProgressPercent">0%</p>
-                </div>
-
-                <!-- 更新结果消息 -->
-                <div class="update-message" id="updateMessage" style="display:none;"></div>
-            </div>
+    <!-- ============================================ -->
+    <!-- HERO -->
+    <!-- ============================================ -->
+    <section class="hero">
+        <h1 class="animate-fade-rise" id="heroTitle">
+            Where <em>dreams</em> rise<br><em>through the silence.</em>
+        </h1>
+        <p class="hero-sub animate-fade-rise-delay" data-i18n="hero.subtitle">
+            AI-powered cinematic editing — analyze film style, match music intelligently,
+            generate multi-track JianYing drafts. Built for deep thinkers, bold creators,
+            and quiet rebels who demand precision in every frame.
+        </p>
+        <button class="hero-cta liquid-glass animate-fade-rise-delay-2" data-i18n="hero.cta"
+                onclick="scrollToFunctionalSection()">
+            Begin Journey
+        </button>
+        <div class="hero-version animate-fade-rise-delay-3">
+            <span class="version-label" id="v2Badge" data-i18n="hero.v2Badge">v2 Classic</span>
+            <label class="switch">
+                <input type="checkbox" id="v3Switch">
+                <span class="slider"></span>
+            </label>
+            <span class="version-label" id="v3Badge" data-i18n="hero.v3Badge">v3 Pipeline</span>
         </div>
+    </section>
 
-        <!-- 头部 -->
-        <header>
-            <h1>🎬 电影 × 音乐 智能匹配</h1>
-            <p class="subtitle" id="v2Subtitle">上传电影素材和音乐，AI 自动分析风格、匹配音乐、生成剪映草稿</p>
-            <p class="subtitle" id="v3Subtitle" style="display:none;">DaVinci 风格分阶段确认管线 — 简报 → 扫描 → 审查 → 蓝图 → 构建</p>
-            <div class="version-toggle" id="versionToggle">
-                <span class="version-badge" id="v2Badge">v2.0 经典</span>
-                <label class="switch">
-                    <input type="checkbox" id="v3Switch">
-                    <span class="slider"></span>
-                </label>
-                <span class="version-badge" id="v3Badge">v3.0 管道</span>
-            </div>
-        </header>
+    <!-- ============================================ -->
+    <!-- MAIN CONTENT -->
+    <!-- ============================================ -->
+    <main>
+    <div class="main-container">
 
-        <!-- v2.0 内容区 -->
+        <!-- ======================================== -->
+        <!-- v2 CLASSIC MODE -->
+        <!-- ======================================== -->
         <div id="v2Content">
 
-        <!-- 步骤指示器 -->
-        <div class="steps" id="steps">
-            <div class="step active" data-step="1">
-                <span class="step-number">1</span>
-                <span class="step-label">上传文件</span>
-            </div>
-            <div class="step-connector"></div>
-            <div class="step" data-step="2">
-                <span class="step-number">2</span>
-                <span class="step-label">AI 分析</span>
-            </div>
-            <div class="step-connector"></div>
-            <div class="step" data-step="3">
-                <span class="step-number">3</span>
-                <span class="step-label">音乐匹配</span>
-            </div>
-            <div class="step-connector"></div>
-            <div class="step" data-step="4">
-                <span class="step-number">4</span>
-                <span class="step-label">智能剪辑</span>
-            </div>
-        </div>
-
-        <!-- 上传区域 -->
-        <section class="upload-section" id="uploadSection">
-            <!-- 视频上传 -->
+        <!-- Upload -->
+        <section class="upload-section reveal" id="uploadSection">
             <div class="upload-box" id="videoUploadBox">
                 <div class="upload-icon">🎥</div>
-                <h3>电影素材</h3>
-                <p>拖拽视频文件到此处，或点击选择</p>
-                <p class="upload-hint">支持 MP4, MOV, AVI, MKV, WebM（最大 2GB）</p>
+                <h3 data-i18n="upload.videoTitle">Film Footage</h3>
+                <p data-i18n="upload.videoDesc">Drag & drop or click to select</p>
+                <p class="upload-hint" data-i18n="upload.videoHint">MP4, MOV, AVI, MKV, WebM &middot; Max 2GB</p>
+                <div class="upload-alt-methods">
+                    <span class="alt-method-label" data-i18n="upload.or">or</span>
+                    <button class="btn-alt-upload" id="videoPasteBtn" data-i18n="upload.ctrlV">📋 Ctrl+V</button>
+                    <button class="btn-alt-upload" id="videoUrlBtn" data-i18n="upload.url">🔗 URL</button>
+                </div>
+                <div class="url-input-row" id="videoUrlRow" style="display:none;">
+                    <input type="text" class="url-input" id="videoUrlInput"
+                           data-i18n-placeholder="upload.videoUrlPlaceholder"
+                           placeholder="Paste video link (WeChat / QQ / Bilibili / YouTube...)">
+                    <button class="btn-url-go" id="videoUrlGo" data-i18n="upload.fetch">Fetch</button>
+                </div>
                 <input type="file" id="videoInput" accept=".mp4,.mov,.avi,.mkv,.webm" hidden>
                 <div class="file-info" id="videoFileInfo"></div>
             </div>
 
-            <!-- 音乐上传 -->
             <div class="upload-box" id="audioUploadBox">
                 <div class="upload-icon">🎵</div>
-                <h3>音乐文件</h3>
-                <p>拖拽音乐文件到此处，或点击选择（可多选）</p>
-                <p class="upload-hint">支持 MP3, WAV, FLAC, AAC, M4A, OGG</p>
+                <h3 data-i18n="upload.musicTitle">Music Tracks</h3>
+                <p data-i18n="upload.musicDesc">Drag & drop or click to select (multi)</p>
+                <p class="upload-hint" data-i18n="upload.musicHint">MP3, WAV, FLAC, AAC, M4A, OGG</p>
+                <div class="upload-alt-methods">
+                    <span class="alt-method-label" data-i18n="upload.or">or</span>
+                    <button class="btn-alt-upload" id="audioPasteBtn" data-i18n="upload.ctrlV">📋 Ctrl+V</button>
+                    <button class="btn-alt-upload" id="audioUrlBtn" data-i18n="upload.url">🔗 URL</button>
+                </div>
+                <div class="url-input-row" id="audioUrlRow" style="display:none;">
+                    <input type="text" class="url-input" id="audioUrlInput"
+                           data-i18n-placeholder="upload.musicUrlPlaceholder"
+                           placeholder="Paste music link (WeChat / QQ / Cloud Drive...)">
+                    <button class="btn-url-go" id="audioUrlGo" data-i18n="upload.fetch">Fetch</button>
+                </div>
                 <input type="file" id="audioInput" accept=".mp3,.wav,.flac,.aac,.m4a,.ogg" multiple hidden>
                 <div class="file-info" id="audioFileInfo"></div>
             </div>
         </section>
 
-        <!-- 剪辑模式选择 -->
-        <div class="editing-mode-section" id="editingModeSection">
-            <h3>✂️ 剪辑模式</h3>
-            <div class="mode-cards editing-mode-cards">
+        <!-- Paste Toast -->
+        <div class="paste-toast" id="pasteToast" style="display:none;">
+            <span class="paste-toast-icon">📋</span>
+            <span id="pasteToastMsg"></span>
+        </div>
+
+        <!-- Editing Mode -->
+        <div class="editing-mode-section reveal" id="editingModeSection">
+            <h3 data-i18n="editingMode.title">Editing Mode</h3>
+            <div class="mode-cards">
                 <div class="mode-card active" data-mode="video_first" id="modeVideoFirst">
                     <div class="mode-icon">🎬</div>
-                    <div class="mode-title">视频优先</div>
-                    <div class="mode-desc">突出视频"爽点""爆点"，音乐辅助视频产出</div>
+                    <div class="mode-title" data-i18n="editingMode.videoFirst">Video First</div>
+                    <div class="mode-desc" data-i18n="editingMode.videoFirstDesc">Highlight best moments, music supports the cut</div>
+                    <div class="mode-features">
+                        <span class="mode-tag" data-i18n="editingMode.vfTag1">🎯 高光优先</span>
+                        <span class="mode-tag" data-i18n="editingMode.vfTag2">⚡ 爆点匹配</span>
+                        <span class="mode-tag" data-i18n="editingMode.vfTag3">🎬 动作混剪</span>
+                    </div>
                 </div>
                 <div class="mode-card" data-mode="music_first" id="modeMusicFirst">
                     <div class="mode-icon">🎵</div>
-                    <div class="mode-title">音乐优先</div>
-                    <div class="mode-desc">视频剪辑跟随音乐结构，营造 MV 感</div>
+                    <div class="mode-title" data-i18n="editingMode.musicFirst">Music First</div>
+                    <div class="mode-desc" data-i18n="editingMode.musicFirstDesc">Video follows music structure, cinematic flow</div>
+                    <div class="mode-features">
+                        <span class="mode-tag" data-i18n="editingMode.mfTag1">🎭 情感匹配</span>
+                        <span class="mode-tag" data-i18n="editingMode.mfTag2">🎵 音乐驱动</span>
+                        <span class="mode-tag" data-i18n="editingMode.mfTag3">🎞️ MV风格</span>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- 导出路径设置 -->
-        <div class="export-path-section" id="exportPathSection">
+        <!-- Export Path -->
+        <div class="export-path-section reveal" id="exportPathSection">
             <div class="export-path-header" id="exportPathToggle">
-                <h3>📁 导出路径 <span class="export-path-arrow" id="exportPathArrow">▼</span></h3>
+                <h3 data-i18n="exportPath.title">Export Path <span class="export-path-arrow" id="exportPathArrow">▼</span></h3>
                 <span class="export-path-default-hint" id="exportPathHint"></span>
             </div>
             <div class="export-path-body" id="exportPathBody" style="display:block;">
                 <div class="export-path-input-row">
                     <input type="text" id="exportPathInput" class="export-path-input"
-                           placeholder="留空则使用默认路径">
-                    <button type="button" id="pickExportPathBtn" class="btn-pick-path" title="浏览文件夹...">📂</button>
-                    <button type="button" id="resetExportPathBtn" class="btn-reset-path" title="恢复默认">↺</button>
+                           data-i18n-placeholder="exportPath.placeholder"
+                           placeholder="Leave empty for default output directory">
+                    <button type="button" id="pickExportPathBtn" class="btn-pick-path" data-i18n-title="exportPath.browse" title="Browse folders">📂</button>
+                    <button type="button" id="resetExportPathBtn" class="btn-reset-path" data-i18n-title="exportPath.reset" title="Reset to default">↺</button>
                 </div>
-                <div class="export-path-suggestions" id="exportPathSuggestions" style="display:none;"></div>
-                <p class="export-path-desc">
-                    💡 点击 📂 浏览选择文件夹，或手动输入路径。留空则自动保存到默认 output 目录。
-                </p>
+                <p class="export-path-desc" data-i18n="exportPath.desc">Click 📂 to browse, or type a path. Default: output/ directory.</p>
+                <div class="path-suggestions" id="exportPathSuggestions" style="display:none;"></div>
             </div>
         </div>
 
-        <!-- 开始按钮 -->
-        <div class="action-bar">
-            <button id="startBtn" class="btn-primary" disabled>
-                🚀 开始分析匹配
-            </button>
+        <!-- Start Button -->
+        <div class="action-bar reveal">
+            <button id="startBtn" class="btn-primary" disabled data-i18n="action.startAnalysis">Start Analysis</button>
         </div>
 
-        <!-- 进度区域 -->
-        <section class="progress-section" id="progressSection" style="display: none;">
+        <!-- Progress -->
+        <section class="progress-section" id="progressSection" style="display:none;">
             <div class="progress-bar-container">
                 <div class="progress-bar" id="progressBar"></div>
             </div>
-            <p class="progress-text" id="progressText">准备中...</p>
+            <p class="progress-text" id="progressText" data-i18n="progress.preparing">Preparing...</p>
             <p class="progress-percent" id="progressPercent">0%</p>
         </section>
 
-        <!-- 错误提示 -->
-        <div class="error-box" id="errorBox" style="display: none;"></div>
+        <!-- Error -->
+        <div class="error-box" id="errorBox" style="display:none;"></div>
 
-        <!-- 结果区域 -->
-        <section class="result-section" id="resultSection" style="display: none;">
-            <h2>📊 分析结果</h2>
-
-            <!-- 电影风格分析 -->
+        <!-- Results -->
+        <section class="result-section" id="resultSection" style="display:none;">
+            <h2 data-i18n="results.title">Analysis Results</h2>
             <div class="result-card" id="styleCard">
-                <h3>🎨 电影风格分析</h3>
+                <h3 data-i18n="results.filmStyle">Film Style Analysis</h3>
                 <div id="styleContent"></div>
             </div>
-
-            <!-- 音乐匹配结果 -->
             <div class="result-card" id="matchCard">
-                <h3>🎼 音乐匹配结果</h3>
+                <h3 data-i18n="results.musicMatch">Music Match Results</h3>
                 <div id="matchContent"></div>
             </div>
-
-            <!-- 操作按钮 -->
             <div class="result-actions">
-                <button class="btn-secondary" onclick="location.reload()">
-                    🔄 重新开始
-                </button>
+                <button class="btn-secondary" onclick="location.reload()" data-i18n="action.startOver">Start Over</button>
             </div>
         </section>
-    </div><!-- /v2Content -->
 
-        <!-- ============================================ -->
-        <!-- v3.0 管道模式内容区 -->
-        <!-- ============================================ -->
+        </div><!-- /v2Content -->
+
+        <!-- ======================================== -->
+        <!-- v3 PIPELINE MODE -->
+        <!-- ======================================== -->
         <div id="v3Content" style="display:none;">
 
-            <!-- v3 项目简报表单 -->
-            <section class="brief-section" id="briefSection">
-                <h2>📋 项目简报</h2>
-                <div class="brief-form">
-                    <div class="brief-row">
-                        <label>项目主题 <span class="required">*</span></label>
-                        <input type="text" id="briefTopic" placeholder="例如：Inception 梦境分析混剪">
+        <!-- Brief -->
+        <section class="brief-section reveal" id="briefSection">
+            <h2 data-i18n="brief.title">Project Brief</h2>
+            <div class="brief-form">
+                <div class="brief-row">
+                    <label><span data-i18n="brief.topic">Topic</span> <span class="required" data-i18n="brief.topicRequired">*</span></label>
+                    <input type="text" id="briefTopic" data-i18n-placeholder="brief.topicPlaceholder" placeholder="e.g. Inception Dream Analysis Montage">
+                </div>
+                <div class="brief-row brief-row-3col">
+                    <div class="brief-col">
+                        <label data-i18n="brief.duration">Duration (sec)</label>
+                        <input type="number" id="briefDuration" value="120" min="5" max="7200">
                     </div>
-                    <div class="brief-row brief-row-3col">
-                        <div class="brief-col">
-                            <label>目标时长 (秒)</label>
-                            <input type="number" id="briefDuration" value="120" min="5" max="7200">
-                        </div>
-                        <div class="brief-col">
-                            <label>目标平台</label>
-                            <select id="briefPlatform">
-                                <option value="jianying">剪映专业版</option>
-                                <option value="capcut">CapCut</option>
-                                <option value="resolve">DaVinci Resolve</option>
-                                <option value="universal">通用（仅蓝图）</option>
-                            </select>
-                        </div>
-                        <div class="brief-col">
-                            <label>画幅比</label>
-                            <select id="briefAspectRatio">
-                                <option value="16:9">横屏 16:9</option>
-                                <option value="9:16">竖屏 9:16</option>
-                                <option value="1:1">方形 1:1</option>
-                                <option value="4:3">经典 4:3</option>
-                                <option value="original">保持原始</option>
-                            </select>
-                        </div>
+                    <div class="brief-col">
+                        <label data-i18n="brief.platform">Platform</label>
+                        <select id="briefPlatform">
+                            <option value="jianying" data-i18n="brief.platform_jianying">JianYing Pro</option>
+                            <option value="capcut" data-i18n="brief.platform_capcut">CapCut</option>
+                            <option value="resolve" data-i18n="brief.platform_resolve">DaVinci Resolve</option>
+                            <option value="universal" data-i18n="brief.platform_universal">Universal (Blueprint)</option>
+                        </select>
                     </div>
-                    <div class="brief-row brief-row-3col">
-                        <div class="brief-col">
-                            <label>语言</label>
-                            <select id="briefLanguage">
-                                <option value="zh-CN">中文</option>
-                                <option value="en">English</option>
-                                <option value="ja">日本語</option>
-                            </select>
-                        </div>
-                        <div class="brief-col">
-                            <label>剪辑模式</label>
-                            <select id="briefEditingMode">
-                                <option value="video_first">🎬 视频优先</option>
-                                <option value="music_first">🎵 音乐优先</option>
-                            </select>
-                        </div>
-                        <div class="brief-col">
-                            <label>旁白/TTS</label>
-                            <select id="briefNarration">
-                                <option value="false">不需要</option>
-                                <option value="true">需要</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="brief-row">
-                        <label>剪辑偏好（可选）</label>
-                        <textarea id="briefPreferences" rows="2" placeholder="例如：节奏克制，使用 J-cut，不要旁白..."></textarea>
-                    </div>
-                    <div class="action-bar">
-                        <button id="createBriefBtn" class="btn-primary">📋 创建简报 & 开始上传</button>
+                    <div class="brief-col">
+                        <label data-i18n="brief.aspectRatio">Aspect Ratio</label>
+                        <select id="briefAspectRatio">
+                            <option value="16:9" data-i18n="brief.ratio_16_9">Landscape 16:9</option>
+                            <option value="9:16" data-i18n="brief.ratio_9_16">Portrait 9:16</option>
+                            <option value="1:1" data-i18n="brief.ratio_1_1">Square 1:1</option>
+                            <option value="4:3" data-i18n="brief.ratio_4_3">Classic 4:3</option>
+                            <option value="original" data-i18n="brief.ratio_original">Original</option>
+                        </select>
                     </div>
                 </div>
-            </section>
+                <div class="brief-row">
+                    <label data-i18n="brief.editingMode">Editing Mode</label>
+                    <select id="briefEditingMode">
+                        <option value="video_first" data-i18n="editingMode.videoFirst">Video First</option>
+                        <option value="music_first" data-i18n="editingMode.musicFirst">Music First</option>
+                    </select>
+                </div>
+                <!-- Structured Preferences -->
+                <div class="brief-preferences-section">
+                    <label data-i18n="prefs.title">Style Preferences</label>
+                    <p class="prefs-hint" data-i18n="prefs.hint">Select options to guide the AI editing style</p>
 
-            <!-- v3 上传区域（简报创建后显示） -->
-            <section class="upload-section" id="v3UploadSection" style="display:none;">
-                <div class="upload-box" id="v3VideoUploadBox">
-                    <div class="upload-icon">🎥</div>
-                    <h3>电影素材</h3>
-                    <p>拖拽视频文件，或点击选择</p>
-                    <p class="upload-hint">支持 MP4, MOV, AVI, MKV, WebM（最大 2GB）</p>
-                    <input type="file" id="v3VideoInput" accept=".mp4,.mov,.avi,.mkv,.webm" hidden>
-                    <div class="file-info" id="v3VideoFileInfo"></div>
-                </div>
-                <div class="upload-box" id="v3AudioUploadBox">
-                    <div class="upload-icon">🎵</div>
-                    <h3>音乐文件</h3>
-                    <p>拖拽音乐文件，或点击选择（可多选）</p>
-                    <p class="upload-hint">支持 MP3, WAV, FLAC, AAC, M4A, OGG</p>
-                    <input type="file" id="v3AudioInput" accept=".mp3,.wav,.flac,.aac,.m4a,.ogg" multiple hidden>
-                    <div class="file-info" id="v3AudioFileInfo"></div>
-                </div>
-            </section>
-
-            <!-- v3 剪辑模式+导出（上传后显示） -->
-            <div class="editing-mode-section" id="v3EditingSection" style="display:none;">
-                <h3>✂️ 剪辑模式</h3>
-                <div class="mode-cards editing-mode-cards">
-                    <div class="mode-card active" data-v3-mode="video_first">
-                        <div class="mode-icon">🎬</div>
-                        <div class="mode-title">视频优先</div>
-                        <div class="mode-desc">突出视频"爽点""爆点"</div>
-                    </div>
-                    <div class="mode-card" data-v3-mode="music_first">
-                        <div class="mode-icon">🎵</div>
-                        <div class="mode-title">音乐优先</div>
-                        <div class="mode-desc">视频跟随音乐结构</div>
-                    </div>
-                </div>
-                <div class="export-path-section" style="margin-top:12px;">
-                    <div class="export-path-header" id="v3ExportPathToggle">
-                        <h3>📁 导出路径 <span class="export-path-arrow" id="v3ExportPathArrow">▶</span></h3>
-                        <span class="export-path-default-hint" id="v3ExportPathHint"></span>
-                    </div>
-                    <div class="export-path-body" id="v3ExportPathBody" style="display:block;">
-                        <div class="export-path-input-row">
-                            <input type="text" id="v3ExportPathInput" class="export-path-input" placeholder="留空使用默认">
-                            <button type="button" id="v3PickExportPathBtn" class="btn-pick-path" title="浏览文件夹...">📂</button>
-                            <button type="button" id="v3ResetExportPathBtn" class="btn-reset-path" title="恢复默认">↺</button>
+                    <div class="prefs-category">
+                        <span class="prefs-cat-label" data-i18n="prefs.pacing">Pacing</span>
+                        <div class="prefs-chips" data-prefs-group="pacing">
+                            <button class="pref-chip" data-prefs-value="fast" data-i18n="prefs.pacing_fast">Fast / Quick Cuts</button>
+                            <button class="pref-chip" data-prefs-value="moderate" data-i18n="prefs.pacing_moderate">Moderate / Balanced</button>
+                            <button class="pref-chip" data-prefs-value="slow" data-i18n="prefs.pacing_slow">Slow / Cinematic</button>
+                            <button class="pref-chip" data-prefs-value="dynamic" data-i18n="prefs.pacing_dynamic">Variable / Dynamic</button>
                         </div>
-                        <div class="export-path-suggestions" id="v3ExportPathSuggestions" style="display:none;"></div>
-                        <p class="export-path-desc">💡 点击 📂 浏览选择文件夹，或手动输入路径。留空则自动保存到 output 目录。</p>
+                    </div>
+
+                    <div class="prefs-category">
+                        <span class="prefs-cat-label" data-i18n="prefs.transition">Transitions</span>
+                        <div class="prefs-chips" data-prefs-group="transition">
+                            <button class="pref-chip" data-prefs-value="hard_cut" data-i18n="prefs.trans_hard">Hard Cut</button>
+                            <button class="pref-chip" data-prefs-value="crossfade" data-i18n="prefs.trans_crossfade">Crossfade / Dissolve</button>
+                            <button class="pref-chip" data-prefs-value="jcut" data-i18n="prefs.trans_jcut">J-Cut / L-Cut</button>
+                            <button class="pref-chip" data-prefs-value="match_cut" data-i18n="prefs.trans_match">Match Cut</button>
+                            <button class="pref-chip" data-prefs-value="speed_ramp" data-i18n="prefs.trans_speed">Speed Ramp</button>
+                        </div>
+                    </div>
+
+                    <div class="prefs-category">
+                        <span class="prefs-cat-label" data-i18n="prefs.mood">Mood / Tone</span>
+                        <div class="prefs-chips" data-prefs-group="mood">
+                            <button class="pref-chip" data-prefs-value="energetic" data-i18n="prefs.mood_energetic">Energetic / Upbeat</button>
+                            <button class="pref-chip" data-prefs-value="emotional" data-i18n="prefs.mood_emotional">Emotional / Sentimental</button>
+                            <button class="pref-chip" data-prefs-value="dark" data-i18n="prefs.mood_dark">Dark / Moody</button>
+                            <button class="pref-chip" data-prefs-value="tense" data-i18n="prefs.mood_tense">Tense / Suspenseful</button>
+                            <button class="pref-chip" data-prefs-value="inspirational" data-i18n="prefs.mood_inspire">Inspirational</button>
+                            <button class="pref-chip" data-prefs-value="calm" data-i18n="prefs.mood_calm">Calm / Contemplative</button>
+                        </div>
+                    </div>
+
+                    <div class="prefs-category">
+                        <span class="prefs-cat-label" data-i18n="prefs.colorGrade">Color Grade</span>
+                        <div class="prefs-chips" data-prefs-group="color_grade">
+                            <button class="pref-chip" data-prefs-value="warm" data-i18n="prefs.color_warm">Warm / Golden</button>
+                            <button class="pref-chip" data-prefs-value="cool" data-i18n="prefs.color_cool">Cool / Blue</button>
+                            <button class="pref-chip" data-prefs-value="high_contrast" data-i18n="prefs.color_contrast">High Contrast</button>
+                            <button class="pref-chip" data-prefs-value="soft" data-i18n="prefs.color_soft">Soft / Pastel</button>
+                            <button class="pref-chip" data-prefs-value="desaturated" data-i18n="prefs.color_desat">Desaturated</button>
+                            <button class="pref-chip" data-prefs-value="vibrant" data-i18n="prefs.color_vibrant">Vibrant / Saturated</button>
+                        </div>
+                    </div>
+
+                    <div class="prefs-category">
+                        <span class="prefs-cat-label" data-i18n="prefs.narrationStyle">Narration Style</span>
+                        <div class="prefs-chips" data-prefs-group="narration_style">
+                            <button class="pref-chip" data-prefs-value="none" data-i18n="prefs.narr_none">None</button>
+                            <button class="pref-chip" data-prefs-value="documentary" data-i18n="prefs.narr_doc">Documentary</button>
+                            <button class="pref-chip" data-prefs-value="casual" data-i18n="prefs.narr_casual">Casual / Vlog</button>
+                            <button class="pref-chip" data-prefs-value="poetic" data-i18n="prefs.narr_poetic">Poetic / Literary</button>
+                        </div>
+                    </div>
+
+                    <div class="prefs-category">
+                        <span class="prefs-cat-label" data-i18n="prefs.musicIntegration">Music Integration</span>
+                        <div class="prefs-chips" data-prefs-group="music_integration">
+                            <button class="pref-chip" data-prefs-value="music_forward" data-i18n="prefs.music_forward">Music-Forward</button>
+                            <button class="pref-chip" data-prefs-value="balanced" data-i18n="prefs.music_balanced">Balanced</button>
+                            <button class="pref-chip" data-prefs-value="dialogue_first" data-i18n="prefs.music_dialogue">Dialogue / SFX Priority</button>
+                        </div>
+                    </div>
+
+                    <div class="prefs-selected-summary" id="prefsSelectedSummary" style="display:none;">
+                        <span data-i18n="prefs.selected">Selected:</span>
+                        <span id="prefsSelectedTags"></span>
+                    </div>
+                </div>
+                <!-- Hidden textarea for backward compat — collects structured prefs as JSON -->
+                <input type="hidden" id="briefPreferencesHidden" value="">
+                <div class="action-bar">
+                    <button id="createBriefBtn" class="btn-primary" data-i18n="brief.createBtn">Create Brief &amp; Upload</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- v3 Upload -->
+        <section class="upload-section reveal" id="v3UploadSection" style="display:none;">
+            <div class="upload-box" id="v3VideoUploadBox">
+                <div class="upload-icon">🎥</div>
+                <h3 data-i18n="upload.videoTitle">Film Footage</h3>
+                <p data-i18n="upload.videoDesc">Drag & drop or click to select</p>
+                <p class="upload-hint" data-i18n="upload.videoHint">MP4, MOV, AVI, MKV, WebM &middot; Max 2GB</p>
+                <div class="upload-alt-methods">
+                    <span class="alt-method-label" data-i18n="upload.or">or</span>
+                    <button class="btn-alt-upload" id="v3VideoPasteBtn" data-i18n="upload.ctrlV">📋 Ctrl+V</button>
+                    <button class="btn-alt-upload" id="v3VideoUrlBtn" data-i18n="upload.url">🔗 URL</button>
+                </div>
+                <div class="url-input-row" id="v3VideoUrlRow" style="display:none;">
+                    <input type="text" class="url-input" id="v3VideoUrlInput" data-i18n-placeholder="upload.genericUrlPlaceholder" placeholder="Paste link">
+                    <button class="btn-url-go" id="v3VideoUrlGo" data-i18n="upload.fetch">Fetch</button>
+                </div>
+                <input type="file" id="v3VideoInput" accept=".mp4,.mov,.avi,.mkv,.webm" hidden>
+                <div class="file-info" id="v3VideoFileInfo"></div>
+            </div>
+            <div class="upload-box" id="v3AudioUploadBox">
+                <div class="upload-icon">🎵</div>
+                <h3 data-i18n="upload.musicTitle">Music Tracks</h3>
+                <p data-i18n="upload.musicDesc">Drag & drop or click to select (multi)</p>
+                <p class="upload-hint" data-i18n="upload.musicHint">MP3, WAV, FLAC, AAC, M4A, OGG</p>
+                <div class="upload-alt-methods">
+                    <span class="alt-method-label" data-i18n="upload.or">or</span>
+                    <button class="btn-alt-upload" id="v3AudioPasteBtn" data-i18n="upload.ctrlV">📋 Ctrl+V</button>
+                    <button class="btn-alt-upload" id="v3AudioUrlBtn" data-i18n="upload.url">🔗 URL</button>
+                </div>
+                <div class="url-input-row" id="v3AudioUrlRow" style="display:none;">
+                    <input type="text" class="url-input" id="v3AudioUrlInput" data-i18n-placeholder="upload.genericUrlPlaceholder" placeholder="Paste link">
+                    <button class="btn-url-go" id="v3AudioUrlGo" data-i18n="upload.fetch">Fetch</button>
+                </div>
+                <input type="file" id="v3AudioInput" accept=".mp3,.wav,.flac,.aac,.m4a,.ogg" multiple hidden>
+                <div class="file-info" id="v3AudioFileInfo"></div>
+            </div>
+        </section>
+
+        <!-- v3 Mode + Export -->
+        <div class="editing-mode-section reveal" id="v3EditingSection" style="display:none;">
+            <h3 data-i18n="editingMode.title">Editing Mode</h3>
+            <div class="mode-cards">
+                <div class="mode-card active" data-v3-mode="video_first">
+                    <div class="mode-icon">🎬</div>
+                    <div class="mode-title" data-i18n="editingMode.videoFirst">Video First</div>
+                    <div class="mode-desc" data-i18n="editingMode.videoFirstShort">Highlight best moments</div>
+                    <div class="mode-features">
+                        <span class="mode-tag">🎯 高光优先</span>
+                        <span class="mode-tag">⚡ 爆点匹配</span>
+                    </div>
+                </div>
+                <div class="mode-card" data-v3-mode="music_first">
+                    <div class="mode-icon">🎵</div>
+                    <div class="mode-title" data-i18n="editingMode.musicFirst">Music First</div>
+                    <div class="mode-desc" data-i18n="editingMode.musicFirstShort">Video follows music</div>
+                    <div class="mode-features">
+                        <span class="mode-tag">🎭 情感匹配</span>
+                        <span class="mode-tag">🎵 音乐驱动</span>
                     </div>
                 </div>
             </div>
-
-            <!-- v3 开始上传按钮 -->
-            <div class="action-bar" id="v3UploadBtnBar" style="display:none;">
-                <button id="v3StartBtn" class="btn-primary" disabled>🚀 开始管道处理</button>
-            </div>
-
-            <!-- v3 管道步骤指示器 -->
-            <div class="pipeline-steps" id="pipelineSteps" style="display:none;">
-                <div class="pstep" data-pstep="media_scan">
-                    <span class="pstep-number">1</span>
-                    <span class="pstep-label">媒体扫描</span>
+            <div class="export-path-section" style="margin-top:14px;">
+                <div class="export-path-header" id="v3ExportPathToggle">
+                    <h3 data-i18n="exportPath.title">Export Path <span class="export-path-arrow" id="v3ExportPathArrow">▶</span></h3>
+                    <span class="export-path-default-hint" id="v3ExportPathHint"></span>
                 </div>
-                <div class="step-connector"></div>
-                <div class="pstep" data-pstep="material_review">
-                    <span class="pstep-number">2</span>
-                    <span class="pstep-label">素材审查</span>
-                </div>
-                <div class="step-connector"></div>
-                <div class="pstep" data-pstep="story">
-                    <span class="pstep-number">3</span>
-                    <span class="pstep-label">故事开发</span>
-                </div>
-                <div class="step-connector"></div>
-                <div class="pstep" data-pstep="blueprint">
-                    <span class="pstep-number">4</span>
-                    <span class="pstep-label">剪辑蓝图</span>
-                </div>
-                <div class="step-connector"></div>
-                <div class="pstep" data-pstep="validate">
-                    <span class="pstep-number">5</span>
-                    <span class="pstep-label">蓝图验证</span>
-                </div>
-                <div class="step-connector"></div>
-                <div class="pstep" data-pstep="build">
-                    <span class="pstep-number">6</span>
-                    <span class="pstep-label">构建+审计</span>
+                <div class="export-path-body" id="v3ExportPathBody" style="display:block;">
+                    <div class="export-path-input-row">
+                        <input type="text" id="v3ExportPathInput" class="export-path-input" data-i18n-placeholder="exportPath.v3Placeholder" placeholder="Leave empty for default">
+                        <button type="button" id="v3PickExportPathBtn" class="btn-pick-path" data-i18n-title="exportPath.browse" title="Browse folders">📂</button>
+                        <button type="button" id="v3ResetExportPathBtn" class="btn-reset-path" data-i18n-title="exportPath.reset" title="Reset to default">↺</button>
+                    </div>
+                    <p class="export-path-desc" data-i18n="exportPath.desc">Click 📂 to browse, or type a path. Default: output/ directory.</p>
+                    <div class="path-suggestions" id="v3ExportPathSuggestions" style="display:none;"></div>
                 </div>
             </div>
+        </div>
 
-            <!-- v3 管道进度条 + 状态 -->
-            <div class="pipeline-progress-section" id="pipelineProgressSection" style="display:none;">
-                <div class="pipeline-progress-header">
-                    <span class="pipeline-phase-name" id="pipelinePhaseName">媒体扫描</span>
-                    <span class="pipeline-phase-percent" id="pipelinePhasePercent">0%</span>
-                </div>
-                <div class="progress-bar-container">
-                    <div class="progress-bar pipeline-progress-bar" id="pipelineProgressBar"></div>
-                </div>
-                <p class="pipeline-status-text" id="pipelineStatusText">准备中...</p>
+        <!-- v3 Start -->
+        <div class="action-bar reveal" id="v3UploadBtnBar" style="display:none;">
+            <button id="v3StartBtn" class="btn-primary" disabled data-i18n="action.startPipeline">Start Pipeline</button>
+        </div>
+
+        <!-- Pipeline Steps -->
+        <div class="pipeline-steps" id="pipelineSteps" style="display:none;">
+            <div class="pstep" data-pstep="media_scan">
+                <span class="pstep-number">1</span><span class="pstep-label" data-i18n="pipeline.steps.scan">Scan</span>
+            </div><div class="step-connector"></div>
+            <div class="pstep" data-pstep="material_review">
+                <span class="pstep-number">2</span><span class="pstep-label" data-i18n="pipeline.steps.review">Review</span>
+            </div><div class="step-connector"></div>
+            <div class="pstep" data-pstep="story">
+                <span class="pstep-number">3</span><span class="pstep-label" data-i18n="pipeline.steps.story">Story</span>
+            </div><div class="step-connector"></div>
+            <div class="pstep" data-pstep="blueprint">
+                <span class="pstep-number">4</span><span class="pstep-label" data-i18n="pipeline.steps.blueprint">Blueprint</span>
+            </div><div class="step-connector"></div>
+            <div class="pstep" data-pstep="validate">
+                <span class="pstep-number">5</span><span class="pstep-label" data-i18n="pipeline.steps.validate">Validate</span>
+            </div><div class="step-connector"></div>
+            <div class="pstep" data-pstep="build">
+                <span class="pstep-number">6</span><span class="pstep-label" data-i18n="pipeline.steps.build">Build</span>
             </div>
+        </div>
 
-            <!-- v3 确认面板 -->
-            <div class="approval-panel" id="approvalPanel" style="display:none;">
-                <div class="approval-header">
-                    <h3 id="approvalTitle">阶段完成</h3>
-                    <p id="approvalSummary"></p>
-                </div>
-                <div class="approval-review" id="approvalReview"></div>
-                <div class="approval-actions">
-                    <button id="approveBtn" class="btn-primary">✅ 确认 & 继续</button>
-                    <button id="retryBtn" class="btn-secondary">🔄 重新分析</button>
-                    <button id="v3SkipBtn" class="btn-secondary" style="display:none;">⏭️ 跳过</button>
-                </div>
+        <!-- Pipeline Progress -->
+        <div class="pipeline-progress-section" id="pipelineProgressSection" style="display:none;">
+            <div class="pipeline-progress-header">
+                <span class="pipeline-phase-name" id="pipelinePhaseName" data-i18n="pipeline.phaseNames.media_scan">Media Scan</span>
+                <span class="pipeline-phase-percent" id="pipelinePhasePercent">0%</span>
             </div>
+            <div class="progress-bar-container">
+                <div class="progress-bar pipeline-progress-bar" id="pipelineProgressBar"></div>
+            </div>
+            <p class="pipeline-status-text" id="pipelineStatusText" data-i18n="pipeline.statusInit">Initializing...</p>
+        </div>
 
-            <!-- v3 结果区域（复用 v2 的 result-section 结构） -->
-            <section class="result-section" id="v3ResultSection" style="display:none;">
-                <h2>📊 管道结果</h2>
-                <div id="v3ResultContent"></div>
-                <div class="result-actions">
-                    <button class="btn-secondary" onclick="location.reload()">🔄 重新开始</button>
-                </div>
-            </section>
+        <!-- Approval Panel -->
+        <div class="approval-panel" id="approvalPanel" style="display:none;">
+            <div class="approval-header">
+                <h3 id="approvalTitle" data-i18n="pipeline.approval.title">Stage Complete</h3>
+                <p id="approvalSummary"></p>
+            </div>
+            <div class="approval-review" id="approvalReview"></div>
+            <div class="approval-actions">
+                <button id="approveBtn" class="btn-primary" data-i18n="pipeline.approval.approve">Approve &amp; Continue</button>
+                <button id="retryBtn" class="btn-secondary" data-i18n="pipeline.approval.retry">Retry</button>
+                <button id="v3SkipBtn" class="btn-secondary" style="display:none;" data-i18n="pipeline.approval.skip">Skip</button>
+            </div>
+        </div>
+
+        <!-- v3 Results -->
+        <section class="result-section" id="v3ResultSection" style="display:none;">
+            <h2 data-i18n="results.pipelineTitle">Pipeline Results</h2>
+            <div id="v3ResultContent"></div>
+            <div class="result-actions">
+                <button class="btn-secondary" onclick="location.reload()" data-i18n="action.startOver">Start Over</button>
+            </div>
+        </section>
 
         </div><!-- /v3Content -->
 
-    </div><!-- /container -->
+    </div><!-- /main-container -->
+    </main>
+
+    <!-- ============================================ -->
+    <!-- MODALS -->
+    <!-- ============================================ -->
+    <div class="modal-overlay" id="tutorialModal" style="display:none;">
+        <div class="modal-content">
+            <button class="modal-close" id="tutorialClose">&times;</button>
+            <h2 data-i18n="tutorial.title">Tutorial</h2>
+            <div class="tutorial-body" id="tutorialContent">
+                <p style="color:hsl(var(--muted-foreground))" data-i18n="tutorial.loading">Loading...</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal-overlay" id="updateModal" style="display:none;">
+        <div class="modal-content">
+            <button class="modal-close" id="updateClose">&times;</button>
+            <h2 data-i18n="update.title">Check Update</h2>
+            <div class="update-info-card">
+                <div class="update-info-row">
+                    <span class="update-info-label" data-i18n="update.currentVersion">Current Version</span>
+                    <span class="update-info-value" id="updateAppVersion">—</span>
+                </div>
+                <div class="update-info-row">
+                    <span class="update-info-label" data-i18n="update.description">Description</span>
+                    <span class="update-info-desc" id="updateAppDesc">—</span>
+                </div>
+            </div>
+            <div class="update-available-section" id="updateAvailableSection" style="display:none;">
+                <div class="update-available-banner" data-i18n="update.newVersionAvailable">New Version Available</div>
+                <div class="update-info-card">
+                    <div class="update-info-row">
+                        <span class="update-info-label" data-i18n="update.latest">Latest</span>
+                        <span class="update-info-value" id="updateLatestVersion">—</span>
+                    </div>
+                    <div class="update-info-row">
+                        <span class="update-info-label" data-i18n="update.changelog">Changelog</span>
+                        <span class="update-info-desc" id="updateLatestDesc">—</span>
+                    </div>
+                </div>
+                <div class="action-bar">
+                    <button id="startUpdateBtn" class="btn-primary" data-i18n="update.startUpdate">Start Update</button>
+                </div>
+            </div>
+            <div class="progress-section" id="updateProgressSection" style="display:none;">
+                <div class="progress-bar-container">
+                    <div class="progress-bar" id="updateProgressBar"></div>
+                </div>
+                <p class="progress-text" id="updateProgressText" data-i18n="update.preparing">Preparing update...</p>
+                <p class="progress-percent" id="updateProgressPercent">0%</p>
+            </div>
+            <!-- Update status message (no-update / error) -->
+            <div class="update-message" id="updateMessage" style="display:none;"></div>
+            <!-- Detailed info: shown when update available -->
+            <div class="update-info-card" id="updateGitInfo" style="display:none;">
+                <div class="update-info-row" id="updateMethodRow" style="display:none;">
+                    <span class="update-info-label">Method</span>
+                    <span class="update-info-value" id="updateMethod">—</span>
+                </div>
+                <div class="update-info-row">
+                    <span class="update-info-label" id="updateGitBadge"></span>
+                    <span class="update-info-desc" id="updateGitDetail"></span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- SUGGESTIONS MODAL -->
+    <!-- ============================================ -->
+    <div class="modal-overlay" id="suggestionsModal" style="display:none;">
+        <div class="modal-content suggestions-modal-content">
+            <button class="modal-close" id="suggestionsClose">&times;</button>
+            <h2 data-i18n="suggestions.title">Suggestion Box</h2>
+            <p class="suggestions-subtitle" data-i18n="suggestions.subtitle">Ideas and feedback from the community — visible to everyone</p>
+
+            <!-- Submit Form -->
+            <div class="suggestions-form">
+                <input type="text" id="suggestionsNickname" class="suggestions-input"
+                       data-i18n-placeholder="suggestions.nicknamePlaceholder"
+                       placeholder="Your nickname" maxlength="50">
+                <textarea id="suggestionsContent" class="suggestions-textarea"
+                          data-i18n-placeholder="suggestions.contentPlaceholder"
+                          placeholder="Share your ideas, feedback, or feature requests..."
+                          maxlength="2000" rows="3"></textarea>
+                <div class="suggestions-visibility-row">
+                    <span class="suggestions-visibility-label" data-i18n="suggestions.visibility">Visibility:</span>
+                    <label class="visibility-option">
+                        <input type="radio" name="suggestionsVisibility" value="public" checked>
+                        <span data-i18n="suggestions.visibilityPublic">Everyone</span>
+                    </label>
+                    <label class="visibility-option">
+                        <input type="radio" name="suggestionsVisibility" value="private">
+                        <span data-i18n="suggestions.visibilityPrivate">Admin Only</span>
+                    </label>
+                </div>
+                <div class="suggestions-form-row">
+                    <span class="suggestions-char-count" id="suggestionsCharCount">0/2000</span>
+                    <button id="suggestionsSubmitBtn" class="btn-primary btn-sm" data-i18n="suggestions.submit">Submit</button>
+                </div>
+                <div class="suggestions-error" id="suggestionsError" style="display:none;"></div>
+            </div>
+
+            <!-- Admin bar -->
+            <div class="suggestions-admin-bar" id="suggestionsAdminBar" style="display:none;">
+                <span class="suggestions-admin-badge">🔑 Admin</span>
+            </div>
+
+            <!-- Suggestions List -->
+            <div class="suggestions-list" id="suggestionsList">
+                <p class="suggestions-loading" data-i18n="suggestions.loading">Loading...</p>
+            </div>
+
+            <div class="suggestions-footer">
+                <button id="suggestionsAdminBtn" class="btn-primary btn-xs" data-i18n="suggestions.adminLogin">Admin</button>
+                <button id="suggestionsRefreshBtn" class="btn-secondary btn-sm" data-i18n="suggestions.refresh">Refresh</button>
+                <span class="suggestions-total" id="suggestionsTotal"></span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Legacy hidden buttons for JS compatibility -->
+    <button id="tutorialBtn" style="display:none;"></button>
+    <button id="updateBtn" style="display:none;"></button>
 
     <script src="/static/script.js"></script>
 </body>
