@@ -861,19 +861,27 @@ def api_update_status():
 def api_tutorial():
     """
     返回使用教程的 HTML 内容。
-    从桌面文件读取，管理员可直接编辑该文件。
+    优先读取桌面文件（本地管理员可直接编辑），不存在时回退到项目内置教程。
     """
-    tutorial_path = os.path.expanduser(r"~\Desktop\MovieMusicMatcher_教程.md")
+    # 桌面文件路径（本地编辑优先）
+    desktop_path = os.path.expanduser(r"~\Desktop\MovieMusicMatcher_教程.md")
+    # 项目内置教程（服务器环境回退）
+    bundled_path = os.path.join(config.BASE_DIR, "tutorials", "tutorial.md")
+
+    tutorial_path = None
+    if os.path.exists(desktop_path):
+        tutorial_path = desktop_path
+    elif os.path.exists(bundled_path):
+        tutorial_path = bundled_path
+    else:
+        return jsonify({"html": f"<p style='color:var(--text-secondary)'>教程文件不存在。请在桌面创建 MovieMusicMatcher_教程.md 或联系管理员检查内置教程。</p>"})
 
     try:
-        if not os.path.exists(tutorial_path):
-            return jsonify({"html": "<p style='color:var(--text-secondary)'>教程文件不存在，请在桌面创建 MovieMusicMatcher_教程.md</p>"})
-
         with open(tutorial_path, "r", encoding="utf-8") as f:
             md_text = f.read()
 
         if not md_text.strip():
-            return jsonify({"html": "<p style='color:var(--text-secondary)'>教程内容为空，请编辑桌面上的 MovieMusicMatcher_教程.md</p>"})
+            return jsonify({"html": "<p style='color:var(--text-secondary)'>教程内容为空</p>"})
 
         html_content = _md_to_html(md_text)
         return jsonify({"html": html_content})
