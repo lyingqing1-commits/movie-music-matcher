@@ -32,6 +32,7 @@
                 <button id="tutorialNavBtn" data-i18n="nav.tutorial">Tutorial</button>
                 <button id="updateNavBtn" data-i18n="nav.update">Update</button>
                 <button id="suggestionsNavBtn" data-i18n="nav.suggestions">Suggestions</button>
+                <button id="bgmNavBtn" class="nav-bgm-btn" title="Background Music">&#9835;</button>
                 <!-- Language Switcher -->
                 <button id="langToggleBtn" class="lang-toggle-btn liquid-glass" title="Switch Language / 切换语言">
                     <span id="langToggleLabel">EN</span>
@@ -607,6 +608,91 @@
     <button id="tutorialBtn" style="display:none;"></button>
     <button id="updateBtn" style="display:none;"></button>
 
+    <!-- ============================================ -->
+    <!-- 🎵 BGM FLOATING PLAYER WIDGET -->
+    <!-- ============================================ -->
+    <div class="bgm-player" id="bgmPlayerWidget" style="display:none;">
+        <button class="bgm-player-toggle" id="bgmPlayerToggle" title="Background Music">
+            <span class="bgm-player-icon">&#9835;</span>
+        </button>
+        <div class="bgm-player-body" id="bgmPlayerBody">
+            <div class="bgm-player-info">
+                <span class="bgm-player-title" id="bgmPlayerTitle">--</span>
+                <span class="bgm-player-source" id="bgmPlayerSource"></span>
+            </div>
+            <div class="bgm-player-progress" id="bgmProgressBar">
+                <div class="bgm-progress-fill" id="bgmProgressFill"></div>
+            </div>
+            <div class="bgm-player-controls">
+                <button class="bgm-btn" id="bgmPrevBtn" title="Previous">&#9664;</button>
+                <button class="bgm-btn bgm-btn-play" id="bgmPlayBtn" title="Play/Pause">&#9654;</button>
+                <button class="bgm-btn" id="bgmNextBtn" title="Next">&#9654;</button>
+            </div>
+            <div class="bgm-player-extra">
+                <button class="bgm-btn-sm" id="bgmShuffleBtn" title="Shuffle">&#128256;</button>
+                <input type="range" class="bgm-volume-slider" id="bgmVolumeSlider" min="0" max="100" value="50" title="Volume">
+                <button class="bgm-btn-sm" id="bgmSettingsBtn" title="Settings">&#9881;</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ============================================ -->
+    <!-- 🎵 BGM SETTINGS MODAL -->
+    <!-- ============================================ -->
+    <div class="modal-overlay" id="bgmSettingsModal" style="display:none;">
+        <div class="modal-content bgm-settings-modal-content">
+            <button class="modal-close" id="bgmSettingsClose">&times;</button>
+            <h2 data-i18n="bgm.settingsTitle">Background Music</h2>
+
+            <div class="bgm-tabs">
+                <button class="bgm-tab active" data-bgm-tab="admin" data-i18n="bgm.tabAdmin">Admin Playlist</button>
+                <button class="bgm-tab" data-bgm-tab="personal" data-i18n="bgm.tabPersonal">My Playlist</button>
+                <button class="bgm-tab" data-bgm-tab="external" data-i18n="bgm.tabExternal">External Links</button>
+            </div>
+
+            <!-- Tab: Admin Playlist -->
+            <div class="bgm-tab-panel active" id="bgmPanelAdmin">
+                <div class="bgm-song-list" id="bgmAdminSongList"></div>
+                <div class="bgm-empty-msg" id="bgmAdminEmpty" data-i18n="bgm.adminEmpty">No songs in admin playlist yet.</div>
+                <div class="bgm-admin-form" id="bgmAdminForm" style="display:none;">
+                    <div class="bgm-add-song-form">
+                        <input type="text" id="bgmAdminTitle" data-i18n-placeholder="bgm.songTitlePlaceholder" placeholder="Song title">
+                        <input type="text" id="bgmAdminUrl" data-i18n-placeholder="bgm.songUrlPlaceholder" placeholder="Audio URL">
+                        <button id="bgmAdminAddBtn" class="btn-primary btn-sm" data-i18n="bgm.addSong">Add Song</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tab: Personal Playlist -->
+            <div class="bgm-tab-panel" id="bgmPanelPersonal">
+                <div class="bgm-song-list" id="bgmPersonalSongList"></div>
+                <div class="bgm-empty-msg" id="bgmPersonalEmpty" data-i18n="bgm.personalEmpty">Your personal playlist is empty.</div>
+                <div class="bgm-add-song-form">
+                    <input type="text" id="bgmPersonalTitle" data-i18n-placeholder="bgm.songTitlePlaceholder" placeholder="Song title">
+                    <input type="text" id="bgmPersonalUrl" data-i18n-placeholder="bgm.songUrlPersonalPlaceholder" placeholder="Audio URL (mp3/wav etc.)">
+                    <button id="bgmPersonalAddBtn" class="btn-primary btn-sm" data-i18n="bgm.addSong">Add Song</button>
+                </div>
+            </div>
+
+            <!-- Tab: External Links -->
+            <div class="bgm-tab-panel" id="bgmPanelExternal">
+                <p class="bgm-hint" data-i18n="bgm.externalHint">Save links to your playlists on external platforms. They will open in a new tab when clicked. For actual playback, add direct audio URLs in the Personal Playlist tab.</p>
+                <div class="bgm-song-list" id="bgmExternalLinksList"></div>
+                <div class="bgm-add-song-form">
+                    <select id="bgmExternalPlatform">
+                        <option value="netease" data-i18n="bgm.platformNetease">NetEase Music</option>
+                        <option value="qq" data-i18n="bgm.platformQQ">QQ Music</option>
+                        <option value="kugou" data-i18n="bgm.platformKugou">Kugou Music</option>
+                    </select>
+                    <input type="text" id="bgmExternalTitle" data-i18n-placeholder="bgm.externalNamePlaceholder" placeholder="Playlist name">
+                    <input type="url" id="bgmExternalUrl" data-i18n-placeholder="bgm.externalUrlPlaceholder" placeholder="Playlist URL">
+                    <button id="bgmExternalAddBtn" class="btn-primary btn-sm" data-i18n="bgm.addLink">Save Link</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="/static/script.js"></script>
+    <script src="/static/bgm-player.js"></script>
 </body>
 </html>

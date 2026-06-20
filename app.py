@@ -1932,7 +1932,7 @@ def api_post_suggestion():
         "visibility": visibility,  # public | private
         "status": "pending",
         "hidden": False,
-        "created_at": _time.strftime("%Y-%m-%d %H:%M UTC", _time.gmtime()),
+        "created_at": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()),
     }
 
     with _suggestions_lock:
@@ -1997,6 +1997,118 @@ def api_update_suggestion_status(sid: str):
                 _save_suggestions(suggestions)
                 return jsonify({"success": True, "suggestion": s})
     return jsonify({"error": "建议不存在"}), 404
+
+
+# ============================================
+# 🎵 BGM Playlist API
+# ============================================
+_bgm_lock = threading.Lock()
+BGM_PLAYLIST_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "workspace", "bgm_playlist.json")
+
+
+def _load_bgm_playlist() -> list:
+    if not os.path.exists(BGM_PLAYLIST_FILE):
+        return []
+    try:
+        with open(BGM_PLAYLIST_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (json.JSONDecodeError, IOError):
+        return []
+
+
+def _save_bgm_playlist(playlist: list):
+    os.makedirs(os.path.dirname(BGM_PLAYLIST_FILE), exist_ok=True)
+    with open(BGM_PLAYLIST_FILE, "w", encoding="utf-8") as f:
+        json.dump(playlist, f, ensure_ascii=False, indent=2)
+
+
+@app.route("/api/bgm/playlist", methods=["GET"])
+def api_get_bgm_playlist():
+    """获取管理端默认歌单（公开读取）"""
+    with _bgm_lock:
+        playlist = _load_bgm_playlist()
+    return jsonify({"playlist": playlist, "total": len(playlist)})
+
+
+@app.route("/api/bgm/playlist", methods=["POST"])
+def api_add_bgm_song():
+    """管理员添加歌曲"""
+    if not _check_admin():
+        return jsonify({"error": "需要管理员权限"}), 403
+    data = request.get_json() if request.is_json else {}
+    title = (data.get("title", "") or "").strip()
+    url = (data.get("url", "") or "").strip()
+    if not title:
+        return jsonify({"error": "请输入歌曲名称"}), 400
+    if not url:
+        return jsonify({"error": "请输入音频URL"}), 400
+    song = {
+        "id": str(uuid.uuid4())[:8],
+        "title": title,
+        "url": url,
+        "added_at": time.strftime("%Y-%m-%d %H:%M UTC", time.gmtime()),
+    }
+    with _bgm_lock:
+        playlist = _load_bgm_playlist()
+        playlist.append(song)
+        _save_bgm_playlist(playlist)
+    return jsonify({"song": song, "total": len(playlist)}), 201
+
+
+@app.route("/api/bgm/playlist/<sid>", methods=["DELETE"])
+def api_delete_bgm_song(sid: str):
+    """管理员移除歌曲"""
+    if not _check_admin():
+        return jsonify({"error": "需要管理员权限"}), 403
+    with _bgm_lock:
+        playlist = _load_bgm_playlist()
+        new_playlist = [s for s in playlist if s.get("id") != sid]
+        if len(new_playlist) == len(playlist):
+            return jsonify({"error": "歌曲不存在"}), 404
+        _save_bgm_playlist(new_playlist)
+    return jsonify({"success": True, "total": len(new_playlist)})
+
+
+@app.route("/api/bgm/playlist/<sid>", methods=["PUT"])
+def api_update_bgm_song(sid: str):
+    """管理员修改歌曲"""
+    if not _check_admin():
+        return jsonify({"error": "需要管理员权限"}), 403
+    data = request.get_json() if request.is_json else {}
+    with _bgm_lock:
+        playlist = _load_bgm_playlist()
+        for s in playlist:
+            if s.get("id") == sid:
+                if "title" in data:
+                    s["title"] = data["title"].strip()
+                if "url" in data:
+                    s["url"] = data["url"].strip()
+                _save_bgm_playlist(playlist)
+                return jsonify({"success": True, "song": s})
+    return jsonify({"error": "歌曲不存在"}), 404
+
+
+@app.route("/api/bgm/playlist/reorder", methods=["PUT"])
+def api_reorder_bgm_playlist():
+    """管理员排序歌单"""
+    if not _check_admin():
+        return jsonify({"error": "需要管理员权限"}), 403
+    data = request.get_json() if request.is_json else {}
+    ordered_ids = data.get("ids", [])
+    if not isinstance(ordered_ids, list):
+        return jsonify({"error": "ids 必须是数组"}), 400
+    with _bgm_lock:
+        playlist = _load_bgm_playlist()
+        id_to_song = {s["id"]: s for s in playlist}
+        reordered = []
+        for sid in ordered_ids:
+            if sid in id_to_song:
+                reordered.append(id_to_song.pop(sid))
+        for remaining in playlist:
+            if remaining["id"] in id_to_song:
+                reordered.append(remaining)
+        _save_bgm_playlist(reordered)
+    return jsonify({"success": True, "total": len(reordered)})
 
 
 if __name__ == "__main__":

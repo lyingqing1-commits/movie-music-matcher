@@ -3,6 +3,8 @@
 
 # 工作空间运行时数据
 workspace/runs/
+workspace/suggestions.json
+workspace/bgm_playlist.json
 
 # Python
 __pycache__/

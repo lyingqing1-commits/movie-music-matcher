@@ -1508,6 +1508,298 @@ main {
 }
 
 /* ============================================
+   🎵 BGM FLOATING PLAYER
+   ============================================ */
+.bgm-player {
+    position: fixed; bottom: 24px; right: 24px; z-index: 55;
+    display: flex; align-items: center;
+    background: hsl(var(--secondary) / 0.9);
+    backdrop-filter: blur(14px);
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-full);
+    transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    overflow: hidden;
+    user-select: none;
+}
+.bgm-player.expanded {
+    border-radius: var(--radius);
+    padding: 10px 16px;
+    gap: 12px;
+    min-width: 380px;
+}
+.bgm-player-toggle {
+    width: 44px; height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: transparent;
+    color: hsl(var(--foreground));
+    font-size: 1.2rem;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+    transition: background 0.2s;
+}
+.bgm-player-toggle:hover { background: hsl(var(--primary) / 0.12); }
+.bgm-player-icon { transition: transform 0.3s; }
+.bgm-player.playing .bgm-player-icon { animation: bgmPulse 1.2s ease-in-out infinite; }
+@keyframes bgmPulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.55; transform: scale(1.08); }
+}
+
+.bgm-player-body {
+    display: none; align-items: center; gap: 12px;
+    flex: 1; min-width: 0;
+}
+.bgm-player.expanded .bgm-player-body { display: flex; }
+.bgm-player.expanded .bgm-player-toggle {
+    width: 32px; height: 32px; font-size: 0.9rem;
+}
+
+/* Song Info */
+.bgm-player-info {
+    display: flex; flex-direction: column; gap: 1px;
+    min-width: 0; flex: 1; max-width: 140px;
+}
+.bgm-player-title {
+    font-size: 0.78rem; font-weight: 600;
+    color: hsl(var(--foreground));
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bgm-player-source {
+    font-size: 0.62rem;
+    color: hsl(var(--muted-foreground));
+    white-space: nowrap;
+}
+
+/* Controls */
+.bgm-player-controls {
+    display: flex; align-items: center; gap: 4px;
+}
+.bgm-btn {
+    width: 28px; height: 28px;
+    border: none; border-radius: 50%;
+    background: transparent;
+    color: hsl(var(--muted-foreground));
+    cursor: pointer;
+    font-size: 0.65rem;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+}
+.bgm-btn:hover { color: hsl(var(--foreground)); background: hsl(var(--primary) / 0.1); }
+.bgm-btn-play {
+    width: 34px; height: 34px;
+    background: hsl(var(--primary) / 0.15);
+    color: hsl(var(--foreground));
+    font-size: 0.75rem;
+}
+.bgm-btn-play:hover { background: hsl(var(--primary) / 0.25); }
+
+/* Progress */
+.bgm-player-progress {
+    width: 60px; height: 4px;
+    background: hsl(var(--border));
+    border-radius: 2px;
+    cursor: pointer;
+    flex-shrink: 0;
+    position: relative;
+}
+.bgm-progress-fill {
+    height: 100%; width: 0%;
+    background: hsl(var(--primary) / 0.5);
+    border-radius: 2px;
+    transition: width 0.3s linear;
+}
+
+/* Extra */
+.bgm-player-extra {
+    display: flex; align-items: center; gap: 6px;
+    flex-shrink: 0;
+}
+.bgm-btn-sm {
+    width: 24px; height: 24px;
+    border: none; border-radius: 50%;
+    background: transparent;
+    color: hsl(var(--muted-foreground));
+    cursor: pointer;
+    font-size: 0.65rem;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+}
+.bgm-btn-sm:hover { color: hsl(var(--foreground)); background: hsl(var(--primary) / 0.1); }
+.bgm-btn-sm.active { color: hsl(var(--primary)); }
+.bgm-volume-slider {
+    width: 56px; height: 3px;
+    -webkit-appearance: none; appearance: none;
+    background: hsl(var(--border));
+    border-radius: 2px;
+    outline: none; cursor: pointer;
+}
+.bgm-volume-slider::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 10px; height: 10px;
+    border-radius: 50%; background: hsl(var(--foreground));
+    cursor: pointer;
+}
+
+/* Collapsed mini play button */
+.bgm-player-collapsed {
+    display: none;
+}
+.bgm-player:not(.expanded) .bgm-player-toggle {
+    width: 44px; height: 44px;
+}
+
+/* ============================================
+   🎵 BGM SETTINGS MODAL
+   ============================================ */
+.bgm-settings-modal-content {
+    max-width: 580px; max-height: 85vh;
+    display: flex; flex-direction: column;
+}
+
+/* Tabs */
+.bgm-tabs {
+    display: flex; gap: 6px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid hsl(var(--border));
+    padding-bottom: 0;
+}
+.bgm-tab {
+    padding: 8px 16px;
+    border: none; border-bottom: 2px solid transparent;
+    background: transparent;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.8rem; cursor: pointer;
+    transition: all 0.2s;
+    margin-bottom: -1px;
+}
+.bgm-tab:hover { color: hsl(var(--foreground)); }
+.bgm-tab.active {
+    color: hsl(var(--foreground));
+    border-bottom-color: hsl(var(--primary));
+}
+
+/* Tab Panels */
+.bgm-tab-panel { display: none; }
+.bgm-tab-panel.active { display: block; }
+
+/* Song List */
+.bgm-song-list {
+    display: flex; flex-direction: column; gap: 6px;
+    max-height: 280px; overflow-y: auto;
+    margin-bottom: 12px;
+}
+.bgm-song-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-sm);
+    background: hsl(var(--secondary) / 0.3);
+    transition: border-color 0.2s;
+}
+.bgm-song-item:hover { border-color: hsl(var(--primary) / 0.3); }
+.bgm-song-item.playing {
+    border-color: hsl(var(--primary) / 0.5);
+    background: hsl(var(--primary) / 0.06);
+}
+.bgm-song-index {
+    font-size: 0.7rem; color: hsl(var(--muted-foreground));
+    width: 20px; text-align: center; flex-shrink: 0;
+}
+.bgm-song-info {
+    flex: 1; min-width: 0;
+    display: flex; flex-direction: column; gap: 1px;
+}
+.bgm-song-title {
+    font-size: 0.82rem; font-weight: 500;
+    color: hsl(var(--foreground));
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.bgm-song-url {
+    font-size: 0.65rem; color: hsl(var(--muted-foreground));
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 260px;
+}
+.bgm-song-actions {
+    display: flex; gap: 4px; flex-shrink: 0;
+}
+
+/* External Link Items */
+.bgm-ext-link-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-sm);
+    background: hsl(var(--secondary) / 0.3);
+}
+.bgm-ext-platform-icon {
+    font-size: 0.75rem; opacity: 0.7;
+}
+.bgm-ext-title {
+    flex: 1; font-size: 0.82rem;
+    color: hsl(var(--foreground));
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* Add Song Form */
+.bgm-add-song-form {
+    display: flex; gap: 8px; flex-wrap: wrap;
+}
+.bgm-add-song-form input,
+.bgm-add-song-form select {
+    flex: 1; min-width: 100px;
+    padding: 8px 12px;
+    border: 1px solid hsl(var(--border));
+    border-radius: var(--radius-sm);
+    background: hsl(var(--secondary));
+    color: hsl(var(--foreground));
+    font-size: 0.78rem;
+    outline: none;
+    transition: border-color 0.2s;
+}
+.bgm-add-song-form input:focus,
+.bgm-add-song-form select:focus {
+    border-color: hsl(var(--primary) / 0.4);
+}
+.bgm-add-song-form select {
+    flex: 0 0 auto;
+}
+.bgm-empty-msg {
+    text-align: center; padding: 24px;
+    color: hsl(var(--muted-foreground));
+    font-size: 0.82rem;
+}
+.bgm-hint {
+    font-size: 0.76rem; color: hsl(var(--muted-foreground));
+    line-height: 1.6;
+    margin-bottom: 14px;
+    padding: 10px 14px;
+    border-left: 3px solid hsl(var(--primary) / 0.3);
+    background: hsl(var(--secondary) / 0.2);
+    border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+.bgm-admin-form {
+    border-top: 1px dashed hsl(var(--border));
+    padding-top: 12px; margin-top: 4px;
+}
+
+/* Nav BGM Button */
+.nav-bgm-btn {
+    width: 36px; height: 36px;
+    border: 1px solid hsl(var(--border));
+    border-radius: 50%;
+    background: transparent;
+    color: hsl(var(--foreground));
+    cursor: pointer;
+    font-size: 0.9rem;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.2s;
+}
+.nav-bgm-btn:hover { background: hsl(var(--primary) / 0.1); border-color: hsl(var(--primary) / 0.4); }
+.nav-bgm-btn.active { background: hsl(var(--primary) / 0.15); border-color: hsl(var(--primary)); }
+
+/* ============================================
    RESPONSIVE
    ============================================ */
 @media (max-width: 768px) {
