@@ -282,16 +282,8 @@ function saveExternalLinks(list) {
     } catch (e) { /* quota exceeded */ }
 }
 
-function isAdmin() {
-    return typeof adminKey !== "undefined" && !!adminKey;
-}
-
-function adminHeaders() {
-    if (typeof adminKey !== "undefined" && adminKey) {
-        return { "X-Admin-Key": adminKey };
-    }
-    return {};
-}
+// NOTE: isAdmin(), adminHeaders(), escapeHTML() are defined in script.js
+// t(key) wraps the global I18N for use before script.js's t() is ready
 
 
 // ============================================================
@@ -466,8 +458,8 @@ async function fetchAdminPlaylist() {
             const urlEl = document.getElementById("bgmAdminUrl");
             const title = (titleEl?.value || "").trim();
             const url = (urlEl?.value || "").trim();
-            if (!title) { alert(_t("bgm.titleRequired")); return; }
-            if (!url) { alert(_t("bgm.urlRequired")); return; }
+            if (!title) { alert(t("bgm.titleRequired")); return; }
+            if (!url) { alert(t("bgm.urlRequired")); return; }
 
             try {
                 const resp = await fetch("/api/bgm/playlist", {
@@ -511,8 +503,8 @@ async function fetchAdminPlaylist() {
             const urlEl = document.getElementById("bgmPersonalUrl");
             const title = (titleEl?.value || "").trim();
             const url = (urlEl?.value || "").trim();
-            if (!title) { alert(_t("bgm.titleRequired")); return; }
-            if (!url) { alert(_t("bgm.urlRequired")); return; }
+            if (!title) { alert(t("bgm.titleRequired")); return; }
+            if (!url) { alert(t("bgm.urlRequired")); return; }
 
             const songs = loadPersonalPlaylist();
             songs.push({
@@ -545,8 +537,8 @@ async function fetchAdminPlaylist() {
             const platform = platEl?.value || "netease";
             const title = (titleEl?.value || "").trim();
             const url = (urlEl?.value || "").trim();
-            if (!title) { alert(_t("bgm.titleRequired")); return; }
-            if (!url) { alert(_t("bgm.urlRequired")); return; }
+            if (!title) { alert(t("bgm.titleRequired")); return; }
+            if (!url) { alert(t("bgm.urlRequired")); return; }
 
             const links = loadExternalLinks();
             links.push({ platform, title, url });
@@ -565,7 +557,7 @@ async function fetchAdminPlaylist() {
             ? `<button class="btn-xs btn-delete" onclick="bgmRemoveSong('${source}', '${song.id}', ${index})" data-i18n="bgm.remove">Remove</button>`
             : "";
         const playBtnHtml = `<button class="btn-xs btn-primary" onclick="bgmPlaySong('${source}', ${index})" data-i18n="bgm.play">Play</button>`;
-        const sourceLabel = isAdminSong ? _t("bgm.sourceAdmin") : _t("bgm.sourcePersonal");
+        const sourceLabel = isAdminSong ? t("bgm.sourceAdmin") : t("bgm.sourcePersonal");
 
         return `
             <div class="bgm-song-item" data-song-id="${escapeHTML(song.id)}">
@@ -582,7 +574,7 @@ async function fetchAdminPlaylist() {
     }
 
     function renderExternalLinkItem(link, index) {
-        const platformNames = { netease: _t("bgm.platformNetease"), qq: _t("bgm.platformQQ"), kugou: _t("bgm.platformKugou") };
+        const platformNames = { netease: t("bgm.platformNetease"), qq: t("bgm.platformQQ"), kugou: t("bgm.platformKugou") };
         const platName = platformNames[link.platform] || link.platform;
         return `
             <div class="bgm-ext-link-item">
@@ -608,7 +600,7 @@ async function fetchAdminPlaylist() {
     };
 
     window.bgmRemoveSong = function (source, songId, index) {
-        if (!confirm(_t("bgm.deleteConfirm"))) return;
+        if (!confirm(t("bgm.deleteConfirm"))) return;
         if (source === "admin") {
             // Admin delete via API
             fetch("/api/bgm/playlist/" + songId, {
@@ -630,7 +622,7 @@ async function fetchAdminPlaylist() {
     };
 
     window.bgmRemoveExternal = function (index) {
-        if (!confirm(_t("bgm.deleteConfirm"))) return;
+        if (!confirm(t("bgm.deleteConfirm"))) return;
         const links = loadExternalLinks();
         links.splice(index, 1);
         saveExternalLinks(links);
@@ -663,13 +655,13 @@ async function fetchAdminPlaylist() {
         if (state.currentSong) {
             if (titleEl) titleEl.textContent = state.currentSong.title;
             if (sourceEl) {
-                sourceEl.textContent = state.isAdminSong ? _t("bgm.sourceAdmin") : _t("bgm.sourcePersonal");
+                sourceEl.textContent = state.isAdminSong ? t("bgm.sourceAdmin") : t("bgm.sourcePersonal");
             }
         } else if (state.playlistLength > 0) {
-            if (titleEl) titleEl.textContent = _t("bgm.clickToStart");
+            if (titleEl) titleEl.textContent = t("bgm.clickToStart");
             if (sourceEl) sourceEl.textContent = "";
         } else {
-            if (titleEl) titleEl.textContent = _t("bgm.noSongs");
+            if (titleEl) titleEl.textContent = t("bgm.noSongs");
             if (sourceEl) sourceEl.textContent = "";
         }
 
@@ -758,25 +750,3 @@ async function fetchAdminPlaylist() {
 
     console.log("[BGM] Player initialized. Gesture unlocked:", BGMAudio.getState().gestureUnlocked);
 })();
-
-
-// ============================================================
-// UTILITY
-// ============================================================
-function escapeHTML(str) {
-    if (!str) return "";
-    return String(str)
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#39;");
-}
-
-function _t(key) {
-    // Use the global I18N instance if available, else return key
-    if (typeof I18N !== "undefined" && I18N._current) {
-        return I18N._current[key] || key;
-    }
-    return key;
-}
